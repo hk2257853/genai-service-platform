@@ -1,0 +1,11 @@
+[project]
+name = "ai-project"
+version = "0.1.0"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["config", "utils"]
+packages = ["day01", "day01.data"]

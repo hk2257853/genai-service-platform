@@ -1,0 +1,54 @@
+## AI Agent Instructions (Antigravity / Coding Agent)
+
+- Industry-standard code only. Prefer maintained libraries over hand-rolled abstractions for solved problems (e.g. provider abstraction, retries, caching) — don't build custom versions of what a library already does well just to "learn by building." Theory is learned separately; code should mirror what ships in production.
+- Clean code, generally:
+  - No duplication — shared logic goes in one place (config, base class, util), not copy-pasted across files
+  - No magic numbers or hardcoded values — named constants, env vars, or config
+  - No hardcoded values that defeat an abstraction already in place (e.g. skipping a provider layer to call an SDK directly)
+  - Single responsibility per function/class — no god functions doing setup + logic + I/O together
+  - Consistent naming and structure across files/modules
+  - Fail loudly, not silently — proper error handling, no swallowed exceptions
+  - Comments explain *why*, not *what* — code should be self-explanatory for the *what*
+- After each day's work, append concise personal notes (interview-recall style: core concepts, key tradeoffs, "why X over Y" decisions, gotchas hit) to a running NOTES.md — built incrementally per day, not written at the end.
+
+# Backend SDE-2 + AI Integration Roadmap (Final)
+
+## Week 1 — LLM + RAG Core
+Day 1 — LLM APIs: OpenAI/Gemini/Anthropic, Structured outputs, Function calling, Streaming, Token + cost awareness
+Day 2 — FastAPI service setup, Clean architecture (routes → service → client), Async + retries + error handling
+Day 3 — RAG basics, Chunking (fixed vs semantic), Embeddings + pgvector, Simple doc Q&A
+Day 4 — Production RAG, Hybrid retrieval (dense + BM25), Reranking (cross-encoder), Query expansion
+Day 5 — LlamaIndex (picked over LangChain — LangGraph covers orchestration in Week 2), Proper indexing + retrieval pipeline, Metadata filtering
+Day 6 — Integrate RAG into FastAPI, Clean API: /ask, Logging + basic metrics
+Day 7 — Revise + simplify, Why hybrid > dense only, Chunking tradeoffs, Latency vs quality
+
+## Week 2 — Agents
+Day 8 — Agent basics, ReAct loop, Tool calling via raw API (no framework first)
+Day 9 — LangGraph (main agent framework), State machine mindset, Multi-step flows
+Day 10 — Add tools: check_order_status + get_product_info, Memory (short-term convo state)
+Day 11 — MCP basics, Tools vs resources vs prompts, Why it matters (standardized tool access)
+Day 12 — Build simple MCP server (FastMCP), Expose orders DB as tools
+Day 13 — Connect LangGraph agent → MCP server, Multi-turn agent with real data
+Day 14 — Revise full flow, Agent vs RAG (when to use which), When NOT to use agents
+
+## Week 3 — Production AI Service
+Day 15 — Feature 1: Production RAG over orders DB, Hybrid retrieval + reranking
+Day 16 — Feature 2: Agent + MCP tools, Real workflows (not toy chat)
+Day 17 — Async pipeline (use Kafka knowledge), Event → AI processing → DB write
+Day 18 — Evals, RAGAS (faithfulness + answer relevancy + contextual precision), Simple assertions for agents, LLM-as-judge (use model to score output quality + compare prompt/retrieval changes)
+Day 19 — Observability, Tracing (LangSmith or structured logs), Cost + latency tracking
+Day 20 — Production hardening, Caching (semantic + exact match), Retries + fallback model, Rate limiting + circuit breakers
+Day 21 — End-to-end polish, Service should feel production-grade
+
+## Week 4 — Differentiation + Interviews
+Day 22 — Java add-on, LangChain4j + Spring Boot, Semantic product search (pgvector)
+Day 23 — Load testing (Locust), Understand LLM latency bottlenecks
+Day 24 — Polish project, Architecture diagram, Clean README, Tradeoffs doc
+Day 25–28 — System design (AI-focused), RAG at scale, Vector DB choices, LLM gateway (routing + cost control), Failure scenarios (timeouts + rate limits + model down)
+Day 29–30 — Mock interviews, Project end-to-end explanation, Scaling decisions, Failure handling
+
+## Final Output
+One production-style FastAPI AI service, RAG with hybrid retrieval + reranking, One LangGraph agent using MCP tools, One MCP server connected to real DB, Evals: RAGAS + assertions + LLM-as-judge, Observability: tracing + cost + latency, Java Spring Boot + LangChain4j demo, Strong system design clarity
+
+## Reality Check
+Build while learning — theory alone won't get you hired, One clean system > knowing 10 tools shallowly, Depth > breadth — this is where most people fail
