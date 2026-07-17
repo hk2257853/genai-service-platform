@@ -1,3 +1,7 @@
 litellm
 pydantic>=2.0
 python-dotenv
+fastapi
+uvicorn[standard]
+tenacity
+httpx
