@@ -1,6 +1,10 @@
 import asyncio
+import os
 import httpx
 import logging
+
+# Override MODEL_ID dynamically to bypass daily free-tier rate limits during testing
+os.environ["MODEL_ID"] = "gemini/gemini-3.1-flash-lite"
 
 # Set up logging for test runner
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -68,8 +72,43 @@ async def run_tests():
                     print(token, end="", flush=True)
             print()
         print("-" * 50)
+
+        # 5. Test Day 3 Ingestion Endpoint
+        doc_path = os.path.join("day03", "sample_doc.txt")
+        logger.info("Testing Endpoint: POST /api/v1/ingest")
+        logger.info("Ingesting file: %s", doc_path)
+        resp = await client.post(
+            "/api/v1/ingest", 
+            json={
+                "content": doc_path, 
+                "document_name": "Transaction Isolation Levels Reference",
+                "method": "semantic"
+            }
+        )
+        assert resp.status_code == 200, f"Ingestion failed: {resp.text}"
+        ingest_data = resp.json()
+        logger.info("Ingestion Success: %s", ingest_data)
+        print("-" * 50)
+
+        # 6. Test Day 3 Ask (RAG) Endpoint
+        question = "What is the Serializable isolation level and what overhead does it have?"
+        logger.info("Testing Endpoint: POST /api/v1/ask")
+        logger.info("Payload Question: %s", question)
+        resp = await client.post("/api/v1/ask", json={"question": question, "limit": 2})
+        assert resp.status_code == 200, f"RAG Ask failed: {resp.text}"
+        rag_data = resp.json()
+        logger.info("RAG Answer: %s", rag_data["answer"])
+        logger.info("Retrieved Sources:")
+        for idx, source in enumerate(rag_data["sources"]):
+            logger.info("  Source %d [%s] (distance %.4f): %s", 
+                        idx + 1, source["document_name"], source["distance"], source["snippet"])
+        logger.info("Token Usage: Prompt=%d, Completion=%d, Total=%d", 
+                    rag_data["prompt_tokens"], rag_data["completion_tokens"], rag_data["total_tokens"])
+        logger.info("Estimated Cost: $%.8f", rag_data["cost"])
+        print("-" * 50)
         
         logger.info("All tests completed successfully!")
 
 if __name__ == "__main__":
     asyncio.run(run_tests())
+

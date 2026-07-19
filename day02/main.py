@@ -3,7 +3,8 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from day02.routes import router
+from day02.routes import router as day02_router
+from day03.routes import router as day03_router
 from day02.exceptions import (
     LLMException,
     LLMAuthenticationError,
@@ -24,7 +25,9 @@ app = FastAPI(
 )
 
 # Include routes under prefix /api/v1
-app.include_router(router, prefix="/api/v1")
+app.include_router(day02_router, prefix="/api/v1")
+app.include_router(day03_router, prefix="/api/v1")
+
 
 
 # Register Global Exception Handlers for custom LLM exception hierarchy

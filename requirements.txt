@@ -5,3 +5,7 @@ fastapi
 uvicorn[standard]
 tenacity
 httpx
+asyncpg
+pgvector
+numpy
+

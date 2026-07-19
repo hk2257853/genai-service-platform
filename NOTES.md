@@ -22,6 +22,8 @@
 
 # Day 2 — FastAPI Service Setup & Clean Architecture
 
+TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform).
+
 ### 1. Layered clean architecture roles
 *   **Client Layer (`client.py`):** Acts as the boundary driver for upstream API integrations. Wraps LiteLLM `acompletion`, encapsulates retries, and translates vendor exceptions into custom domain exceptions to keep downstream business logic vendor-agnostic.
 *   **Service Layer (`service.py`):** Holds pure business domain orchestration (e.g. structured data mapping/validation, token consumption, dynamic costing). Is completely decoupled from HTTP concerns.
