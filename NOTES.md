@@ -38,3 +38,25 @@ TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform
 
 ### 4. Tenacity integration for async retries
 *   **Rule:** Use tenacity's `AsyncRetrying` wrapper dynamically inside client code, filtering retries exclusively to transient network/rate limit issues, while letting fatal configuration errors (like Auth failures) fail fast.
+
+# Day 3 — RAG Basics: Chunking, Embeddings, pgvector, and Document Q&A
+
+### 1. Chunking Strategies: Fixed-Size vs. Semantic
+*   **Fixed-Size Chunking:** Splits text by character count with overlap.
+    *   *Design:* Implemented word-boundary backtracking (reversing up to 20% of chunk size to find a space) to prevent clipping words.
+    *   *Tradeoff:* Fast, deterministic, and requires no API calls. However, it completely ignores semantic boundaries, which can separate context across chunks.
+*   **Semantic Chunking:** Groups sentences based on topic coherence.
+    *   *Design:* Breaks document into sentences, generates embeddings, calculates the cosine distance ($1 - \text{cosine\_similarity}$) between adjacent sentences, and triggers a new chunk at distance spikes (threshold ~`0.25`).
+    *   *Tradeoff:* Preserves complete thoughts and semantic unity. However, it is slower and incurs higher cost due to embedding calls for every single sentence.
+    *   *Optimizations:* All sentence embeddings are fetched in a single batched API call to minimize network roundtrips.
+
+### 2. pgvector & asyncpg Setup
+*   **Concept:** Extends PostgreSQL to store and query vector embeddings directly.
+*   **Driver Integration:** Registered pgvector with the `asyncpg` connection pool (`register_vector`) to automatically handle encoding/decoding of native Python float lists to Postgres `vector` types.
+*   **Index Selection:** Created an **HNSW (Hierarchical Navigable Small World)** index using `vector_cosine_ops` to enable fast approximate nearest neighbors (ANN) search matching the `<=>` cosine distance operator.
+*   **Gotcha:** Dynamic schema creation (e.g. vector dimension) cannot be parameterized dynamically via SQL placeholder arguments. The column type `vector({dimension})` must be formatted securely or resolved statically beforehand.
+
+### 3. RAG Pipeline Orchestration
+*   **Flow:** Retrieve context first, then synthesize. The query is embedded, the closest matching text chunks are pulled from pgvector, and a system prompt constructs the grounding context for the LLM.
+*   **Hallucination Control:** Prompt instruction strictly forces the LLM to state "I do not know" if the answer is not present in the retrieved context.
+*   **Cost Efficiency:** Both chunks and queries are embedded asynchronously, using batching where possible. Cost is tracked using `litellm.completion_cost` to maintain budget awareness.
