@@ -14,8 +14,7 @@ DEFAULT_RETRIES: int = 3             # Number of retries for transient API error
 
 # Database configuration
 DB_HOST: str = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT: int = int(os.getenv("DB_PORT", "5433"))
+DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
 DB_NAME: str = os.getenv("DB_NAME", "ai_project")
 DB_USER: str = os.getenv("DB_USER", "postgres")
-DB_PASSWORD: str = os.getenv("DB_PASSWORD", "postgres")
-
+DB_PASSWORD: str = os.getenv("DB_PASSWORD", "pass")

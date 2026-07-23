@@ -12,7 +12,7 @@ from litellm.exceptions import (
 )
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from day02.exceptions import (
+from ai_service_platform.core.exceptions import (
     LLMAuthenticationError,
     LLMRateLimitError,
     LLMConnectionError,

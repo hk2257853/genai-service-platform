@@ -3,9 +3,10 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from day02.routes import router as day02_router
-from day03.routes import router as day03_router
-from day02.exceptions import (
+from ai_service_platform.api.health import router as health_router
+from ai_service_platform.api.generation import router as generation_router
+from ai_service_platform.api.rag import router as rag_router
+from ai_service_platform.core.exceptions import (
     LLMException,
     LLMAuthenticationError,
     LLMRateLimitError,
@@ -14,23 +15,23 @@ from day02.exceptions import (
     LLMAPIError
 )
 
-# Set up logging configuration to match production standards
+# Production logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("main_app")
 
 app = FastAPI(
-    title="Clean Architecture FastAPI LLM Service",
-    description="SDE-2 compliant LLM Service demonstrating routes -> service -> client architecture, async execution, tenacity retries, and unified error mapping.",
+    title="AI Service Platform",
+    description="Production-grade AI microservice platform with layered clean architecture: Core Infra, Schemas, Services, API, and RAG pipelines.",
     version="1.0.0"
 )
 
-# Include routes under prefix /api/v1
-app.include_router(day02_router, prefix="/api/v1")
-app.include_router(day03_router, prefix="/api/v1")
+# Register domain API routers under /api/v1 prefix
+app.include_router(health_router, prefix="/api/v1")
+app.include_router(generation_router, prefix="/api/v1")
+app.include_router(rag_router, prefix="/api/v1")
 
 
-
-# Register Global Exception Handlers for custom LLM exception hierarchy
+# Global Exception Handlers mapping domain exceptions to HTTP status codes
 @app.exception_handler(LLMAuthenticationError)
 async def auth_exception_handler(request: Request, exc: LLMAuthenticationError):
     logger.critical("Authentication error raised globally: %s", exc)
@@ -86,5 +87,4 @@ async def general_llm_exception_handler(request: Request, exc: LLMException):
 
 
 if __name__ == "__main__":
-    # Start uvicorn server programmatically if run directly
-    uvicorn.run("day02.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("ai_service_platform.main:app", host="127.0.0.1", port=8000, reload=True)

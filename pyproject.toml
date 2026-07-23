@@ -1,5 +1,5 @@
 [project]
-name = "ai-project"
+name = "ai-service-platform"
 version = "0.1.0"
 
 [build-system]
@@ -7,5 +7,13 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["config", "utils"]
-packages = ["day01", "day01.data", "day02", "day03"]
+packages = [
+    "ai_service_platform",
+    "ai_service_platform.core",
+    "ai_service_platform.schemas",
+    "ai_service_platform.services",
+    "ai_service_platform.api",
+    "ai_service_platform.rag",
+    "ai_service_platform.tests",
+    "ai_service_platform.tests.fixtures"
+]

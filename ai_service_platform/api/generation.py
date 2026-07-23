@@ -1,29 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 
-from day02.service import LLMService, LLMResponse, SentimentAnalysisResponse
+from ai_service_platform.schemas.generation import (
+    ChatRequest,
+    SentimentRequest,
+    LLMResponse,
+    SentimentAnalysisResponse
+)
+from ai_service_platform.services.generation import LLMService
 
-router = APIRouter()
-
-# Input Validation Models
-class ChatRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, description="Prompt message to send to the LLM.")
-
-
-class SentimentRequest(BaseModel):
-    feedback: str = Field(..., min_length=5, description="Feedback text to perform sentiment analysis on.")
+router = APIRouter(tags=["Generation"])
 
 
-# Dependency Injection for service layer
 def get_llm_service() -> LLMService:
     return LLMService()
-
-
-@router.get("/health", status_code=200)
-async def health_check():
-    """Simple API health check endpoint."""
-    return {"status": "healthy"}
 
 
 @router.post("/chat", response_model=LLMResponse)
@@ -33,10 +23,8 @@ async def generate_chat(
 ):
     """Generates standard completion responses for a given prompt."""
     try:
-        response = await service.generate_text(request.prompt)
-        return response
+        return await service.generate_text(request.prompt)
     except Exception as e:
-        # Unexpected exceptions caught here; custom domain exceptions handled globally
         raise e
 
 
@@ -45,12 +33,10 @@ async def analyze_sentiment(
     request: SentimentRequest, 
     service: LLMService = Depends(get_llm_service)
 ):
-    """Analyzes customer feedback sentiment returning a validated Pydantic model response."""
+    """Analyzes customer feedback sentiment returning a validated Pydantic response."""
     try:
-        response = await service.analyze_sentiment(request.feedback)
-        return response
+        return await service.analyze_sentiment(request.feedback)
     except ValueError as e:
-        # Schema validation error or invalid input format
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise e
@@ -65,10 +51,8 @@ async def stream_chat(
     async def sse_generator():
         try:
             async for token in service.stream_text(request.prompt):
-                # Standard Server-Sent Events formatting
                 yield f"data: {token}\n\n"
         except Exception as e:
-            # Yield error event for client visibility mid-stream
             yield f"event: error\ndata: {str(e)}\n\n"
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")

@@ -2,17 +2,18 @@ import asyncio
 import os
 import logging
 
-from day03.chunking import fixed_size_chunking, semantic_chunking
-from day03.embeddings import get_embeddings_batch
+from ai_service_platform.rag.chunking import fixed_size_chunking, semantic_chunking
+from ai_service_platform.rag.embeddings import get_embeddings_batch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("test_rag_local")
 
 
 async def main():
-    doc_path = os.path.join("day03", "sample_doc.txt")
+    fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+    doc_path = os.path.join(fixtures_dir, "sample_doc.txt")
     if not os.path.exists(doc_path):
-        logger.error("Could not find sample_doc.txt. Make sure to run from project root.")
+        logger.error("Could not find sample_doc.txt at %s.", doc_path)
         return
 
     with open(doc_path, "r", encoding="utf-8") as f:
@@ -34,7 +35,6 @@ async def main():
 
     # 2. Run Semantic Chunking
     print(f"\n--- 2. SEMANTIC CHUNKING (Cosine Distance Threshold: 0.25) ---")
-    # Generating sentence embeddings dynamically
     semantic_chunks = await semantic_chunking(text, embed_fn=get_embeddings_batch, distance_threshold=0.25)
     print(f"Total Chunks Generated: {len(semantic_chunks)}")
     for i, chunk in enumerate(semantic_chunks):

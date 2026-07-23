@@ -1,44 +1,20 @@
 import logging
 from typing import AsyncIterator
 from litellm import completion_cost
-from pydantic import BaseModel, Field
 
-import config
-from day02.client import AsyncLLMClient
+from ai_service_platform import config
+from ai_service_platform.core.client import AsyncLLMClient
+from ai_service_platform.schemas.generation import (
+    ProductSentimentAnalysis,
+    LLMResponse,
+    SentimentAnalysisResponse
+)
 
-logger = logging.getLogger("llm_service")
-
-
-class ProductSentimentAnalysis(BaseModel):
-    """Pydantic schema for structured output sentiment analysis."""
-    product_name: str = Field(description="The name of the product mentioned.")
-    sentiment: str = Field(description="The sentiment of the user. Options: Positive, Negative, Neutral.")
-    rating: int = Field(description="An estimated star rating from 1 to 5 based on the text.")
-    pros: list[str] = Field(description="Key strengths/features liked by the customer.")
-    cons: list[str] = Field(description="Key complaints or pain points mentioned.")
-    requires_refund: bool = Field(description="True if the user is demanding a refund, else False.")
-
-
-class LLMResponse(BaseModel):
-    """Standardized response model for general generation requests."""
-    content: str
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
-
-
-class SentimentAnalysisResponse(BaseModel):
-    """Standardized response model for structured sentiment analysis."""
-    analysis: ProductSentimentAnalysis
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
+logger = logging.getLogger("generation_service")
 
 
 class LLMService:
-    """Service layer executing business logic, output validation, and cost logging."""
+    """Service layer executing LLM text generation, structured analysis, and streaming."""
 
     def __init__(self, client: AsyncLLMClient | None = None):
         self.client = client or AsyncLLMClient(default_model=config.MODEL_ID)
@@ -64,7 +40,7 @@ class LLMService:
         )
 
     async def analyze_sentiment(self, feedback_text: str) -> SentimentAnalysisResponse:
-        """Asynchronously analyzes feedback text and validates against schema."""
+        """Asynchronously analyzes feedback text and validates against structured schema."""
         response = await self.client.acompletion(
             action_name="service_sentiment",
             messages=[{"role": "user", "content": f"Analyze this customer feedback:\n\n{feedback_text}"}],
@@ -74,7 +50,6 @@ class LLMService:
 
         raw_json_str = response.choices[0].message.content or ""
         
-        # Pydantic parsing of returned schema
         try:
             analysis = ProductSentimentAnalysis.model_validate_json(raw_json_str)
         except Exception as e:
@@ -93,7 +68,7 @@ class LLMService:
         )
 
     async def stream_text(self, prompt: str) -> AsyncIterator[str]:
-        """Asynchronously streams generated text, capturing usage metadata in final chunk if present."""
+        """Asynchronously streams generated text, capturing usage metadata in final chunk."""
         stream_generator = self.client.acompletion_stream(
             action_name="service_stream",
             messages=[{"role": "user", "content": prompt}],
@@ -101,7 +76,6 @@ class LLMService:
         )
 
         async for chunk in stream_generator:
-            # Check for token usage metrics
             if hasattr(chunk, "usage") and chunk.usage is not None:
                 usage = chunk.usage
                 cost = completion_cost(completion_response=chunk) or 0.0

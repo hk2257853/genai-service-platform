@@ -3,17 +3,14 @@ import os
 import httpx
 import logging
 
-# Override MODEL_ID dynamically to bypass daily free-tier rate limits during testing
 os.environ["MODEL_ID"] = "gemini/gemini-3.1-flash-lite"
 
-# Set up logging for test runner
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("test_api")
 
-# Import the FastAPI app
-from day02.main import app
-# Import mock customer feedback for sentiment analysis test
-from day01.data import HYPERCHARGE_FEEDBACK
+from ai_service_platform.main import app
+from ai_service_platform.tests.fixtures.mock_data import HYPERCHARGE_FEEDBACK
+
 
 async def run_tests():
     logger.info("Initializing in-memory integration tests using httpx.AsyncClient...")
@@ -73,8 +70,9 @@ async def run_tests():
             print()
         print("-" * 50)
 
-        # 5. Test Day 3 Ingestion Endpoint
-        doc_path = os.path.join("day03", "sample_doc.txt")
+        # 5. Test Ingestion Endpoint
+        fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+        doc_path = os.path.join(fixtures_dir, "sample_doc.txt")
         logger.info("Testing Endpoint: POST /api/v1/ingest")
         logger.info("Ingesting file: %s", doc_path)
         resp = await client.post(
@@ -90,7 +88,7 @@ async def run_tests():
         logger.info("Ingestion Success: %s", ingest_data)
         print("-" * 50)
 
-        # 6. Test Day 3 Ask (RAG) Endpoint
+        # 6. Test RAG Ask Endpoint
         question = "What is the Serializable isolation level and what overhead does it have?"
         logger.info("Testing Endpoint: POST /api/v1/ask")
         logger.info("Payload Question: %s", question)
@@ -109,6 +107,6 @@ async def run_tests():
         
         logger.info("All tests completed successfully!")
 
+
 if __name__ == "__main__":
     asyncio.run(run_tests())
-
