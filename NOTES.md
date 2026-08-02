@@ -60,3 +60,88 @@ TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform
 *   **Flow:** Retrieve context first, then synthesize. The query is embedded, the closest matching text chunks are pulled from pgvector, and a system prompt constructs the grounding context for the LLM.
 *   **Hallucination Control:** Prompt instruction strictly forces the LLM to state "I do not know" if the answer is not present in the retrieved context.
 *   **Cost Efficiency:** Both chunks and queries are embedded asynchronously, using batching where possible. Cost is tracked using `litellm.completion_cost` to maintain budget awareness.
+
+# Day 4 — Production RAG: Hybrid Retrieval, Reranking, Query Expansion
+
+Everything below is 6 concepts + how they're wired together.
+
+## 1. Embeddings / Dense Retrieval
+Convert text → vector. Similar meaning → vectors close together (cosine sim / ANN lookup).
+- **Good:** understands meaning, catches paraphrases ("laptop broken" → "hardware failure")
+- **Bad:** exact identifiers — `PROD-101`, `ERR_4001` — get lost in the embedding space
+
+## 2. BM25 / Sparse Retrieval
+Classic TF-IDF keyword search — does the document literally contain the query terms.
+- **Good:** exact IDs, error codes, code tokens, rare exact words. Cheap — no model inference.
+- **Bad:** no notion of meaning — synonyms/paraphrases miss entirely.
+
+## 3. Hybrid Retrieval
+Run dense + BM25 in parallel, combine results. Dense catches meaning, BM25 catches exact keywords — together they cover both failure modes.
+
+**Core principle to say out loud in an interview:** always filter deterministically (cheap algorithms/APIs) before spending LLM tokens/reasoning on the data. Same logic applies outside RAG too — e.g. filter raw HTML/job listings with scripts before ever handing them to an LLM.
+
+## 4. Query Expansion
+LLM generates N paraphrases/sub-queries of the user's question before retrieval runs (e.g. "reset password" → "forgot password", "change password", "recover account"). Search with all of them.
+- **Purpose:** recall — don't miss a good document just because it used different wording.
+- **Cost:** N× retrieval calls + N× embedding calls.
+
+## 5. RRF — Reciprocal Rank Fusion
+You now have two ranked lists (dense's ranking, BM25's ranking) with scores that aren't comparable to each other. RRF merges them by **rank**, not raw score.
+
+```
+RRF_score(d) = Σ 1 / (k + rank_m(d))   over each retrieval method m
+```
+- k=60 is a smoothing constant — stops rank-1 from dominating everything.
+- A document ranked well by *both* methods gets a higher combined score than one only one method liked.
+- One-liner: **merge first** — rewards documents multiple retrieval methods agree on.
+
+## 6. Cross-Encoder Reranking (The Careful Final Judge)
+Why two stages?
+- **Bi-Encoder (Embeddings / Dense Search - Stage 1):**
+  - Query and Document are embedded **independently** into separate vectors (`Vec(Q)` and `Vec(D)`).
+  - Similarity is calculated via Cosine Distance.
+  - *Why Stage 1:* $O(1)$ lightning fast ANN vector index search across 10,000+ docs, BUT query words and document words **never look at each other directly** (no cross-token self-attention).
+- **Cross-Encoder (`ms-marco-MiniLM-L-6-v2` - Stage 2):**
+  - Feeds `[Query] + [Document Chunk]` **together** into a single Transformer model.
+  - Every word in the query directly attends to every word in the document (full cross-token self-attention).
+  - Outputs a high-precision relevance score (e.g., `+6.84` for high relevance vs `-11.32` for irrelevant).
+  - *Why Stage 2:* Too computationally heavy to run forward passes on 10,000 docs ($O(N)$ inference cost), but ideal for carefully scoring a small **shortlist of 10--20 candidate chunks**.
+
+**Two-Stage Architecture Funnel:**
+```text
+Corpus (10,000 docs) 
+        ↓  [Stage 1: Fast Hybrid Search (Dense + BM25)]
+Candidates (~15-20 shortlist)
+        ↓  [Stage 2: Cross-Encoder Reranking (Full Cross-Token Attention)]
+Top-K Chunks (~3-5 best) → Sent to LLM Prompt
+```
+One-liner: **Bi-encoder pulls the fast shortlist; Cross-encoder is the careful final judge that sorts the shortlist.**
+
+## Recall vs Precision
+- **Recall** — did we find all the relevant documents? → improved by Query Expansion + Hybrid Retrieval
+- **Precision** — are the top results actually the best ones? → improved by Cross-Encoder Reranking
+
+## Final Pipeline
+```
+User Question
+    ↓
+Query Expansion (N variants)
+    ↓
+Dense Search  +  BM25 Search   (hybrid, run on each variant)
+    ↓
+RRF Merge
+    ↓
+Cross-Encoder Reranking
+    ↓
+Top ~5 Chunks
+    ↓
+LLM → Answer
+```
+
+## Hiring analogy (for recall in an interview)
+1. Dense + BM25 = HR quickly shortlists 50 resumes.
+2. RRF = merges HR's shortlist with the hiring manager's shortlist into one list.
+3. Cross-Encoder = the interviewer carefully reviews those 50 and picks the best 5.
+4. LLM = answers using only those best 5.
+
+**Find candidates → merge candidates → carefully rank candidates → answer.**

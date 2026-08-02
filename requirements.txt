@@ -7,5 +7,6 @@ tenacity
 httpx
 asyncpg
 pgvector
-numpy
+rank-bm25
+sentence-transformers
 
