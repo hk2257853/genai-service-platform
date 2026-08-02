@@ -1,4 +1,4 @@
-# AI Service Platform
+# GenAI Service Platform
 
 A production-grade Python AI microservice platform built with FastAPI, LiteLLM, and PostgreSQL. Demonstrates layered clean architecture, async token streaming, structured Pydantic schema validation, resilient tenacity retries, and document RAG pipelines.
 

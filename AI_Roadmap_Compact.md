@@ -1,6 +1,7 @@
 ## AI Agent Instructions (Antigravity / Coding Agent)
 
-- Industry-standard code only. Prefer maintained libraries over hand-rolled abstractions for solved problems (e.g. provider abstraction, retries, caching) — don't build custom versions of what a library already does well just to "learn by building." Theory is learned separately; code should mirror what ships in production.
+- **FRAMEWORK-FIRST, ALWAYS.** If a maintained library/framework solves the problem (provider abstraction, retries, caching, agent orchestration, RAG indexing, rate limiting, etc.), use it. Never hand-roll a custom version, even for "learning by building." No exceptions — applies uniformly across every day, including agent loops (use LangGraph directly, don't hand-roll a raw ReAct loop first).
+- **UNDERSTANDING STILL MATTERS, BUT LIVES IN NOTES, NOT CODE.** Before or while using a framework, briefly analyze and note what it's doing under the hood. This goes into NOTES.md as concise, interview-recall-style notes (core concepts, key tradeoffs, "why X over Y," gotchas). It does NOT translate into writing a parallel hand-rolled implementation.
 - Clean code, generally:
   - No duplication — shared logic goes in one place (config, base class, util), not copy-pasted across files
   - No magic numbers or hardcoded values — named constants, env vars, or config
@@ -18,13 +19,13 @@ Day 1 — LLM APIs: OpenAI/Gemini/Anthropic, Structured outputs, Function callin
 Day 2 — FastAPI service setup, Clean architecture (routes → service → client), Async + retries + error handling
 Day 3 — RAG basics, Chunking (fixed vs semantic), Embeddings + pgvector, Simple doc Q&A
 Day 4 — Production RAG, Hybrid retrieval (dense + BM25), Reranking (cross-encoder), Query expansion
-Day 5 — LlamaIndex (picked over LangChain — LangGraph covers orchestration in Week 2), Proper indexing + retrieval pipeline, Metadata filtering
-Day 6 — Integrate RAG into FastAPI, Clean API: /ask, Logging + basic metrics
+Day 5 — LlamaIndex RAG pipeline (framework-first: use LlamaIndex for indexing, retrieval, metadata filtering instead of hand-rolling), Note in NOTES.md what LlamaIndex does under the hood
+Day 6 — Integrate LlamaIndex RAG into FastAPI, Clean API: /ask, Logging + basic metrics
 Day 7 — Revise + simplify, Why hybrid > dense only, Chunking tradeoffs, Latency vs quality
 
 ## Week 2 — Agents
-Day 8 — Agent basics, ReAct loop, Tool calling via raw API (no framework first)
-Day 9 — LangGraph (main agent framework), State machine mindset, Multi-step flows
+Day 8 — Agent basics using LangGraph directly (framework-first: no hand-rolled ReAct loop), State machine mindset, Note in NOTES.md what a ReAct loop is and what LangGraph's state machine does under the hood
+Day 9 — LangGraph multi-step flows, Conditional routing, Human-in-the-loop patterns
 Day 10 — Add tools: check_order_status + get_product_info, Memory (short-term convo state)
 Day 11 — MCP basics, Tools vs resources vs prompts, Why it matters (standardized tool access)
 Day 12 — Build simple MCP server (FastMCP), Expose orders DB as tools
@@ -37,7 +38,7 @@ Day 16 — Feature 2: Agent + MCP tools, Real workflows (not toy chat)
 Day 17 — Async pipeline (use Kafka knowledge), Event → AI processing → DB write
 Day 18 — Evals, RAGAS (faithfulness + answer relevancy + contextual precision), Simple assertions for agents, LLM-as-judge (use model to score output quality + compare prompt/retrieval changes)
 Day 19 — Observability, Tracing (LangSmith or structured logs), Cost + latency tracking
-Day 20 — Production hardening, Caching (semantic + exact match), Retries + fallback model, Rate limiting + circuit breakers
+Day 20 — Production hardening, Caching (semantic + exact match, use framework/library solutions), Retries + fallback model (LiteLLM router), Rate limiting + circuit breakers
 Day 21 — End-to-end polish, Service should feel production-grade
 
 ## Week 4 — Differentiation + Interviews
