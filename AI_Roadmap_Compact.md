@@ -19,7 +19,7 @@ Day 1 — LLM APIs: OpenAI/Gemini/Anthropic, Structured outputs, Function callin
 Day 2 — FastAPI service setup, Clean architecture (routes → service → client), Async + retries + error handling
 Day 3 — RAG basics, Chunking (fixed vs semantic), Embeddings + pgvector, Simple doc Q&A
 Day 4 — Production RAG, Hybrid retrieval (dense + BM25), Reranking (cross-encoder), Query expansion
-Day 5 — LlamaIndex RAG pipeline (framework-first: use LlamaIndex for indexing, retrieval, metadata filtering instead of hand-rolling), Note in NOTES.md what LlamaIndex does under the hood
+Day 5 — LlamaIndex RAG pipeline (framework-first: use LlamaIndex for indexing, retrieval, metadata filtering instead of hand-rolling), Note in NOTES.md what LlamaIndex does under the hood concisely
 Day 6 — Integrate LlamaIndex RAG into FastAPI, Clean API: /ask, Logging + basic metrics
 Day 7 — Revise + simplify, Why hybrid > dense only, Chunking tradeoffs, Latency vs quality
 

@@ -145,3 +145,66 @@ LLM → Answer
 4. LLM = answers using only those best 5.
 
 **Find candidates → merge candidates → carefully rank candidates → answer.**
+# Day 5 — Framework-First RAG with LlamaIndex: Under-The-Hood Analysis
+
+### 1. Step-by-Step LlamaIndex Pipeline Mechanics
+*   **Step 1 — Document:** Raw file comes in, wrapped with metadata (`category`, `version`, etc.).
+*   **Step 2 — SentenceSplitter:** Breaks the Document into Nodes (chunks), cutting on sentence boundaries, with overlap so context isn't lost at the edges $\rightarrow$ this is what makes retrieval possible at all (you can't embed a whole doc usefully).
+*   **Step 3 — StorageContext:** Decides where these Nodes and their embeddings will actually live (Postgres via `PGVectorStore`) — decoupled so storage is swappable without touching business logic.
+*   **Step 4 — VectorStoreIndex:** Takes the Nodes, generates embeddings for each, hands them to the `StorageContext` to persist $\rightarrow$ this is the "build" step, orchestrates steps 2 and 3 together.
+*   **Step 5 — PGVectorStore:** The actual place the vectors sit in Postgres — knows how to write/read Node embeddings as rows.
+*   **Step 6 — Retriever $\rightarrow$ Query Engine:** At query time, Retriever does similarity search to pull top-$k$ matching Nodes; Query Engine takes those Nodes and calls the LLM to synthesize an actual answer — retrieval and generation are separate concerns.
+*   **Step 7 — MetadataFilters:** Applied *before* step 6's similarity search, so you're only searching within the relevant subset of Nodes (e.g. only `category: security` docs), not the whole index.
+*   **Step 8 — Settings (Global Config):** The thread running through all of this — tells steps 2, 4, and 6 which embedding model and LLM to actually use.
+
+**Summary Pipeline:**
+$$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \text{Embedded \& Stored} \longrightarrow \text{Filtered (if needed)} \longrightarrow \text{Retrieved by Similarity} \longrightarrow \text{Synthesized into Answer}$$
+
+---
+
+### 2. Multi-Threading Pattern in Async Framework Adapters (`ThreadPoolExecutor`)
+*   **The Problem:** Third-party synchronous framework callbacks (like LlamaIndex's sync `_get_text_embedding`) are sometimes invoked inside async event loops (e.g., FastAPI / uvicorn ASGI thread). Calling `asyncio.run()` directly inside an already running event loop triggers `RuntimeError: asyncio.run() cannot be called from a running event loop`.
+*   **The Solution (Worker Thread Isolation):** We offloaded synchronous execution of the async embedding coroutine to a dedicated background thread (`ThreadPoolExecutor(max_workers=1)`):
+    ```python
+    def sync_thread_run(coro_fn, *args):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(lambda: asyncio.run(coro_fn(*args)))
+            return future.result()
+    ```
+*   **Why Thread Isolation over `nest_asyncio`?** Monkey-patching libraries like `nest_asyncio` modify loop internals globally, which corrupts async transports (`httpx.ASGITransport` / `sniffio`). Running the coroutine in a separate worker thread creates an isolated event loop in that thread without corrupting the main ASGI event loop.
+*   **When to use this pattern:**
+    1. **Synchronous-to-Async Bridging:** When overriding legacy or 3rd-party synchronous interface methods that must invoke async I/O functions.
+    2. **Offloading CPU-Bound Work:** When running intensive tasks (tokenization, encryption, image transformation) so they don't block FastAPI's single-threaded async event loop.
+
+---
+
+### 3. Sync vs. Async vs. Threading Mental Model (Universal Backend Rules)
+
+#### A. Core Mental Model
+*   **Async (`asyncio`):** A **single waiter** juggling 100 tables. While one table's food is in the oven (network / DB / LLM wait), the waiter takes orders from 10 other tables on **1 single thread**.
+*   **Sync:** The waiter stands still in front of the oven and freezes until the food is done before serving anyone else (blocks the entire server).
+*   **Threads (`ThreadPoolExecutor`):** Hiring an **extra helper** in a separate thread lane to do a specific job without blocking the main waiter.
+
+#### B. The 3 Scenarios You Will Encounter
+
+*   **Scenario 1 — In `async` code, need to run slow/blocking sync work:**
+    *   *Examples:* Password hashing (bcrypt), slow disk file I/O, heavy CPU math.
+    *   *Danger:* Running heavy sync code directly in `async def` freezes the server for every other user!
+    *   *Solution:* `result = await asyncio.to_thread(slow_sync_function, arg1)`
+*   **Scenario 2 — In `sync` code, need to call an `async def` function:**
+    *   *Standard Script / CLI:* `result = asyncio.run(my_async_function())`
+    *   *Inside a Web Server (FastAPI / ASGI loop):* Calling `asyncio.run()` crashes with `RuntimeError: asyncio.run() cannot be called from a running event loop`.
+    *   *Solution (Thread Bridge):* Spawn an isolated worker thread that runs `asyncio.run()` in its own event loop and returns the result.
+*   **Scenario 3 — Workload Selection Matrix:**
+
+| Workload Type | Real-World Examples | Best Tool | Why |
+|---|---|---|---|
+| **I/O Bound** | LLM API calls, HTTP requests, Postgres queries | **Async (`asyncio`)** | Handles 10,000+ parallel requests on 1 thread with minimal RAM. |
+| **I/O Sync-to-Async Bridge** | Calling async APIs from rigid third-party sync hooks | **Worker Threads (`ThreadPoolExecutor`)** | Creates an isolated space to run async coroutines safely without crashing. |
+| **CPU Heavy** | Image resizing, massive array computation, ML model training | **Processes (`ProcessPoolExecutor`)** | Bypasses Python's GIL to utilize multiple physical CPU cores. |
+
+#### C. Golden Rules for Production
+> 1. **Async** is for waiting on networks and databases.  
+> 2. **Threads** are for bridging sync/async boundaries and non-blocking I/O tasks.  
+> 3. **Never call `asyncio.run()` directly inside an active event loop** — always isolate it in a worker thread.
+

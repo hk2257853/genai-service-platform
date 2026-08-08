@@ -9,4 +9,8 @@ asyncpg
 pgvector
 rank-bm25
 sentence-transformers
+llama-index-core
+llama-index-vector-stores-postgres
+llama-index-embeddings-gemini
+llama-index-llms-gemini
 

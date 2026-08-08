@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from ai_service_platform.api.health import router as health_router
 from ai_service_platform.api.generation import router as generation_router
 from ai_service_platform.api.rag import router as rag_router
+from ai_service_platform.api.llamaindex_rag import router as llamaindex_router
 from ai_service_platform.core.exceptions import (
     LLMException,
     LLMAuthenticationError,
@@ -29,6 +30,7 @@ app = FastAPI(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(generation_router, prefix="/api/v1")
 app.include_router(rag_router, prefix="/api/v1")
+app.include_router(llamaindex_router, prefix="/api/v1")
 
 
 # Global Exception Handlers mapping domain exceptions to HTTP status codes
