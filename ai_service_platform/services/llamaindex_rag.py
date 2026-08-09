@@ -1,9 +1,9 @@
 import logging
 from typing import Dict, Any, Optional
-from litellm import completion_cost
 
 from ai_service_platform import config
 from ai_service_platform.core.client import AsyncLLMClient
+from ai_service_platform.core.utils import extract_usage_and_cost
 from ai_service_platform.rag.llamaindex_pipeline import LlamaIndexPipeline
 from ai_service_platform.schemas.rag import SourceMetadata, IngestResponse
 from ai_service_platform.schemas.llamaindex_rag import LlamaIndexAskResponse
@@ -93,15 +93,11 @@ class LlamaIndexRAGService:
         )
 
         answer = response.choices[0].message.content or ""
-        usage = response.usage
-        cost = completion_cost(completion_response=response) or 0.0
+        metrics = extract_usage_and_cost(response)
 
         return LlamaIndexAskResponse(
             answer=answer,
             sources=sources,
             filters_applied=filters,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost=cost
+            **metrics
         )

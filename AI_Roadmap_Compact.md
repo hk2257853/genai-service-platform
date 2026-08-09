@@ -23,6 +23,8 @@ Day 5 — LlamaIndex RAG pipeline (framework-first: use LlamaIndex for indexing,
 Day 6 — Integrate LlamaIndex RAG into FastAPI, Clean API: /ask, Logging + basic metrics
 Day 7 — Revise + simplify, Why hybrid > dense only, Chunking tradeoffs, Latency vs quality
 
+*Week 1 takeaway:* Days 2–4 (By hand) taught the internals (BM25, vector math, reranking) for interview understanding; Days 5–6 (LlamaIndex) taught how production code is written using industry-standard libraries.
+
 ## Week 2 — Agents
 Day 8 — Agent basics using LangGraph directly (framework-first: no hand-rolled ReAct loop), State machine mindset, Note in NOTES.md what a ReAct loop is and what LangGraph's state machine does under the hood
 Day 9 — LangGraph multi-step flows, Conditional routing, Human-in-the-loop patterns
@@ -32,21 +34,25 @@ Day 12 — Build simple MCP server (FastMCP), Expose orders DB as tools
 Day 13 — Connect LangGraph agent → MCP server, Multi-turn agent with real data
 Day 14 — Revise full flow, Agent vs RAG (when to use which), When NOT to use agents
 
-## Week 3 — Production AI Service
-Day 15 — Feature 1: Production RAG over orders DB, Hybrid retrieval + reranking
-Day 16 — Feature 2: Agent + MCP tools, Real workflows (not toy chat)
-Day 17 — Async pipeline (use Kafka knowledge), Event → AI processing → DB write
-Day 18 — Evals, RAGAS (faithfulness + answer relevancy + contextual precision), Simple assertions for agents, LLM-as-judge (use model to score output quality + compare prompt/retrieval changes)
-Day 19 — Observability, Tracing (LangSmith or structured logs), Cost + latency tracking
-Day 20 — Production hardening, Caching (semantic + exact match, use framework/library solutions), Retries + fallback model (LiteLLM router), Rate limiting + circuit breakers
-Day 21 — End-to-end polish, Service should feel production-grade
+## New Fundamental Concepts (extracted from Weeks 3–4)
+*These are genuinely new AI-specific concepts — not just applications of Week 1+2 skills. Learn these before building the production project so you're interview-ready on all core topics.*
 
-## Week 4 — Differentiation + Interviews
-Day 22 — Java add-on, LangChain4j + Spring Boot, Semantic product search (pgvector)
-Day 23 — Load testing (Locust), Understand LLM latency bottlenecks
-Day 24 — Polish project, Architecture diagram, Clean README, Tradeoffs doc
-Day 25–28 — System design (AI-focused), RAG at scale, Vector DB choices, LLM gateway (routing + cost control), Failure scenarios (timeouts + rate limits + model down)
-Day 29–30 — Mock interviews, Project end-to-end explanation, Scaling decisions, Failure handling
+Day 15 — Evals: RAGAS (faithfulness + answer relevancy + contextual precision), Simple assertions for agents, LLM-as-judge (use model to score output quality + compare prompt/retrieval changes)
+Day 16 — Observability + Tracing: LangSmith or structured logs, Cost + latency tracking per request, Token usage monitoring
+Day 17 — Production AI Patterns: Semantic + exact-match caching, Fallback model routing (LiteLLM router), Rate limiting + circuit breakers for LLM APIs
+Day 18 — AI System Design: RAG at scale, Vector DB choices (pgvector vs Pinecone vs Weaviate), LLM gateway (routing + cost control), Failure scenarios (timeouts + rate limits + model down)
+
+*After this point, all core concepts are covered. Everything below is applying Week 1–2 + above concepts + existing backend skills to build a production-grade portfolio project.*
+
+## Application & Portfolio (build phase)
+Day 19 — Feature 1: Production RAG over orders DB, Hybrid retrieval + reranking
+Day 20 — Feature 2: Agent + MCP tools, Real workflows (not toy chat)
+Day 21 — Async pipeline (use Kafka knowledge), Event → AI processing → DB write
+Day 22 — End-to-end polish, Service should feel production-grade
+Day 23 — Java add-on, LangChain4j + Spring Boot, Semantic product search (pgvector)
+Day 24 — Load testing (Locust), Understand LLM latency bottlenecks
+Day 25 — Polish project, Architecture diagram, Clean README, Tradeoffs doc
+Day 26–30 — Mock interviews, Project end-to-end explanation, Scaling decisions, Failure handling
 
 ## Final Output
 One production-style FastAPI AI service, RAG with hybrid retrieval + reranking, One LangGraph agent using MCP tools, One MCP server connected to real DB, Evals: RAGAS + assertions + LLM-as-judge, Observability: tracing + cost + latency, Java Spring Boot + LangChain4j demo, Strong system design clarity

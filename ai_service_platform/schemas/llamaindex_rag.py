@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+
+from ai_service_platform.schemas.common import BaseLLMUsage
 from ai_service_platform.schemas.rag import SourceMetadata
 
 
@@ -21,11 +23,8 @@ class LlamaIndexAskRequest(BaseModel):
     )
 
 
-class LlamaIndexAskResponse(BaseModel):
+class LlamaIndexAskResponse(BaseLLMUsage):
+    """Standardized response model for LlamaIndex RAG pipeline queries."""
     answer: str
     sources: List[SourceMetadata]
     filters_applied: Optional[Dict[str, Any]] = None
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float

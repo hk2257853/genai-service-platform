@@ -1,9 +1,9 @@
 import logging
 from typing import AsyncIterator
-from litellm import completion_cost
 
 from ai_service_platform import config
 from ai_service_platform.core.client import AsyncLLMClient
+from ai_service_platform.core.utils import extract_usage_and_cost
 from ai_service_platform.schemas.generation import (
     ProductSentimentAnalysis,
     LLMResponse,
@@ -28,15 +28,11 @@ class LLMService:
         )
 
         content = response.choices[0].message.content or ""
-        usage = response.usage
-        cost = completion_cost(completion_response=response) or 0.0
+        metrics = extract_usage_and_cost(response)
 
         return LLMResponse(
             content=content,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost=cost
+            **metrics
         )
 
     async def analyze_sentiment(self, feedback_text: str) -> SentimentAnalysisResponse:
@@ -56,15 +52,11 @@ class LLMService:
             logger.error("Failed to validate JSON response schema: %s. Raw content: %s", e, raw_json_str)
             raise ValueError(f"Model returned invalid schema format: {e}") from e
 
-        usage = response.usage
-        cost = completion_cost(completion_response=response) or 0.0
+        metrics = extract_usage_and_cost(response)
 
         return SentimentAnalysisResponse(
             analysis=analysis,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost=cost
+            **metrics
         )
 
     async def stream_text(self, prompt: str) -> AsyncIterator[str]:
@@ -77,13 +69,12 @@ class LLMService:
 
         async for chunk in stream_generator:
             if hasattr(chunk, "usage") and chunk.usage is not None:
-                usage = chunk.usage
-                cost = completion_cost(completion_response=chunk) or 0.0
+                metrics = extract_usage_and_cost(chunk)
                 logger.info(
                     "[Stream Finished] Prompt: %d, Completion: %d, Cost: $%.8f",
-                    usage.prompt_tokens,
-                    usage.completion_tokens,
-                    cost
+                    metrics["prompt_tokens"],
+                    metrics["completion_tokens"],
+                    metrics["cost"]
                 )
             elif len(chunk.choices) > 0:
                 content = chunk.choices[0].delta.content

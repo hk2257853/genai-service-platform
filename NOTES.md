@@ -208,3 +208,60 @@ $$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \tex
 > 2. **Threads** are for bridging sync/async boundaries and non-blocking I/O tasks.  
 > 3. **Never call `asyncio.run()` directly inside an active event loop** — always isolate it in a worker thread.
 
+---
+
+# Day 8 — Autonomous Agents with LangGraph: State Machine Mindset
+
+### 1. Pipelines vs. Autonomous Agents
+*   **Deterministic Pipeline:** A fixed, linear sequence of steps ($A \rightarrow B \rightarrow C$). Follows the exact same execution path every time.
+*   **Autonomous Agent:** The *path itself* is decided dynamically at runtime by the LLM. Non-determinism exists in the control flow, not just in the generated text.
+
+### 2. State Machines & Graph Architecture
+*   **State Machine Mindset:** A system modeled as **states** (current snapshot of memory/context) and **transitions** (edges). The current state determines what happens next.
+*   **DAGs vs. Cyclic Graphs:**
+    *   *DAGs (Directed Acyclic Graphs):* Strictly forward-moving with no revisiting. Incapable of modeling "loop until done", retries, or dynamic reflection.
+    *   *Cyclic Graphs (LangGraph):* Enables cycles ($A \leftrightarrow B$), allowing agents to reason, invoke tools, inspect observations, and loop back until the task is resolved.
+*   **LangGraph Execution Flow:**
+    ```text
+           [START]
+              │
+              ▼
+       ┌──────────────┐
+       │  agent_node  │ ◄──────────┐
+       │  (Ask LLM)   │            │
+       └──────┬───────┘            │
+              │                    │
+              ▼                    │
+     ┌─────────────────┐           │
+     │ should_continue │           │
+     └────┬────────────┘           │
+          │                        │
+          ├── Has tool calls? ─► ┌─┴────────────┐
+          │                      │  tool_node   │
+          │                      │ (Exec Tools) │
+          │                      └──────────────┘
+          ▼
+       No tools / Max iterations reached
+          │
+          ▼
+        [END]
+    ```
+*   **State Reducers (`add_messages`):** Because **LLMs are completely stateless** (they have zero memory between API calls), reducers append and merge new messages into a growing conversation transcript rather than overwriting state. This provides the AI with the complete context (user prompt $\rightarrow$ requested tools $\rightarrow$ tool results) on every subsequent turn.
+
+### 3. The ReAct Pattern (Reason + Act + Observe)
+*   **The Paradigm:** The agent operates in an iterative reasoning loop:
+    $$\text{Thought (Reason)} \longrightarrow \text{Action (Tool Call)} \longrightarrow \text{Observation (Tool Output)} \longrightarrow \text{Next Thought}$$
+*   **Why Interleaving Beats Upfront Planning:** Upfront planning relies on static assumptions. Interleaving reasoning with action allows the model to inspect real-world outputs (or errors) and dynamically correct its course.
+
+### 4. Tool Calling & Observation Accumulation
+*   **Tool Calling Concept:** The LLM does *not* execute code directly. It emits structured intent (e.g., `{"name": "check_status", "args": {"service": "billing"}}`). Your application code executes the tool and passes the output back into the state.
+*   **Schema Framing:** Presenting tools as structured JSON schemas in the prompt enables the LLM to select the appropriate tool and extract arguments directly from natural language.
+*   **Observation Accumulation (The AI's Context):** An agent’s "memory" within a run is literally the accumulated message history in state. Each tool execution result becomes a `ToolMessage` appended to the transcript so the LLM can read the outcome on its next turn.
+
+### 5. Production Guardrails & Safety Patterns
+*   **Exit Conditions (Early Exit vs. `max_iterations`):**
+    *   *Early Exit (Standard Flow):* The agent exits as soon as the LLM decides it has enough information and returns a final text answer without requesting further tools (typically in 1–2 turns).
+    *   *`max_iterations` Guard (Circuit Breaker):* If the model fails to converge, hallucinates invalid tools, or gets stuck in a loop, hitting the iteration limit forces an exit, preventing infinite loops and runaway costs.
+*   **Graceful Tool Error Handling:** Catching tool exceptions and returning structured error payloads (`{"error": "..."}`) allows the agent to self-correct or explain the problem cleanly without crashing the service.
+*   **Multi-Turn Metrics Accumulation:** Token consumption and monetary cost must be accumulated across all turns ($\sum \text{turn}_i$) to provide transparent tracking for multi-step agent executions.
+

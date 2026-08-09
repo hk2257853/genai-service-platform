@@ -13,4 +13,6 @@ llama-index-core
 llama-index-vector-stores-postgres
 llama-index-embeddings-gemini
 llama-index-llms-gemini
+langgraph
+langchain-core
 

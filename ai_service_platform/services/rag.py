@@ -1,10 +1,9 @@
 import os
 import logging
 from typing import List, Dict, Any
-from litellm import completion_cost
-
 from ai_service_platform import config
 from ai_service_platform.core.client import AsyncLLMClient
+from ai_service_platform.core.utils import extract_usage_and_cost
 from ai_service_platform.core.db import init_db, insert_chunks, search_chunks, get_db_pool
 from ai_service_platform.rag.chunking import fixed_size_chunking, semantic_chunking
 from ai_service_platform.rag.embeddings import get_embedding, get_embeddings_batch
@@ -221,16 +220,12 @@ class RAGService:
         )
 
         answer = response.choices[0].message.content or ""
-        usage = response.usage
-        cost = completion_cost(completion_response=response) or 0.0
+        metrics = extract_usage_and_cost(response)
 
         return AskResponse(
             answer=answer,
             sources=sources,
             expanded_queries=expanded_queries if use_query_expansion else None,
             retrieval_method=retrieval_method,
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-            cost=cost
+            **metrics
         )

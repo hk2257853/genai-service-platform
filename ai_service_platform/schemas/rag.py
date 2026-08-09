@@ -1,6 +1,8 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+from ai_service_platform.schemas.common import BaseLLMUsage
+
 
 # Metadata and source models
 class SourceMetadata(BaseModel):
@@ -33,15 +35,12 @@ class IngestResponse(BaseModel):
     method_used: str
 
 
-class AskResponse(BaseModel):
+class AskResponse(BaseLLMUsage):
+    """Standardized RAG question answering response model."""
     answer: str
     sources: List[SourceMetadata]
     expanded_queries: Optional[List[str]] = None
     retrieval_method: str
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
 
 
 class SearchChunkResult(BaseModel):

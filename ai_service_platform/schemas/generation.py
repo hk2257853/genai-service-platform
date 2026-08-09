@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from ai_service_platform.schemas.common import BaseLLMUsage
+
 
 # Structured output validation schemas
 class ProductSentimentAnalysis(BaseModel):
@@ -22,19 +24,11 @@ class SentimentRequest(BaseModel):
 
 
 # API Response schemas
-class LLMResponse(BaseModel):
+class LLMResponse(BaseLLMUsage):
     """Standardized response model for general generation requests."""
     content: str
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
 
 
-class SentimentAnalysisResponse(BaseModel):
+class SentimentAnalysisResponse(BaseLLMUsage):
     """Standardized response model for structured sentiment analysis."""
     analysis: ProductSentimentAnalysis
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cost: float
