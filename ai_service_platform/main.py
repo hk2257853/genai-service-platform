@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Ensure workspace root is in sys.path when running file directly
+workspace_root = str(Path(__file__).resolve().parent.parent)
+if workspace_root not in sys.path:
+    sys.path.insert(0, workspace_root)
+
 import logging
 import uvicorn
 from fastapi import FastAPI, Request
@@ -8,6 +16,7 @@ from ai_service_platform.api.generation import router as generation_router
 from ai_service_platform.api.rag import router as rag_router
 from ai_service_platform.api.llamaindex_rag import router as llamaindex_router
 from ai_service_platform.api.agent import router as agent_router
+from ai_service_platform.api.workflow import router as workflow_router
 from ai_service_platform.core.exceptions import (
     LLMException,
     LLMAuthenticationError,
@@ -33,6 +42,7 @@ app.include_router(generation_router, prefix="/api/v1")
 app.include_router(rag_router, prefix="/api/v1")
 app.include_router(llamaindex_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1")
+app.include_router(workflow_router, prefix="/api/v1")
 
 
 # Global Exception Handlers mapping domain exceptions to HTTP status codes

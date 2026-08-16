@@ -15,4 +15,7 @@ llama-index-embeddings-gemini
 llama-index-llms-gemini
 langgraph
 langchain-core
+pytest
+pytest-asyncio
+pytest-html
 

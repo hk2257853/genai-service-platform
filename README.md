@@ -1,8 +1,10 @@
 # GenAI Service Platform
 
-A production-grade Python AI microservice platform built with FastAPI, LiteLLM, and PostgreSQL. Demonstrates layered clean architecture, async token streaming, structured Pydantic schema validation, resilient tenacity retries, and document RAG pipelines.
+A production-grade Python AI microservice platform built with **FastAPI**, **LiteLLM**, **LlamaIndex**, and **LangGraph**. Demonstrates a 5-layer clean architecture with unified schema inheritance, hybrid RAG retrieval, metadata filtering, and cyclic autonomous state machine agents.
 
-## Project Structure
+---
+
+## Architecture Overview
 
 ```text
 ai_service_platform/
@@ -11,30 +13,44 @@ ai_service_platform/
 │
 ├── core/                           # Shared Cross-Cutting Infrastructure
 │   ├── client.py                   # Async LiteLLM wrapper + tenacity retries
+│   ├── utils.py                    # Usage metrics extraction & shared helpers
 │   ├── exceptions.py               # Custom domain exception hierarchy
-│   └── db.py                       # Database connection pool & vector/array operations
+│   └── db.py                       # PostgreSQL + pgvector connection pool
 │
-├── schemas/                        # Pydantic Data Schemas
-│   ├── generation.py               # Chat, Sentiment, Stream models
-│   └── rag.py                      # Ingest, Ask, SourceMetadata models
+├── schemas/                        # Pydantic Schemas (inheriting BaseLLMUsage)
+│   ├── common.py                   # BaseLLMUsage (prompt/completion tokens, cost)
+│   ├── generation.py               # Chat, Structured Sentiment, Streaming
+│   ├── rag.py                      # Ingest, Production Ask, Search models
+│   ├── llamaindex_rag.py           # LlamaIndex Ingest & Metadata-filtered Ask
+│   ├── agent.py                    # ToolCallRecord, AgentRunRequest/Response
+│   └── workflow.py                 # Multi-step Workflow & HITL Approval schemas
 │
-├── services/                       # Business Domain Services
-│   ├── generation.py               # LLMService (text gen, sentiment, streaming)
-│   └── rag.py                      # RAGService (document ingestion & grounded Q&A)
+├── services/                       # Business Domain Orchestration Layer
+│   ├── generation.py               # LLMService (text generation, sentiment, stream)
+│   ├── rag.py                      # RAGService (Hybrid dense+BM25, RRF, Cross-Encoder)
+│   ├── llamaindex_rag.py           # LlamaIndexRAGService (SentenceSplitter, filters)
+│   ├── agent.py                    # AgentService (LangGraph orchestration & cost metrics)
+│   └── workflow.py                 # WorkflowService (HITL pause/resume & state introspection)
 │
-├── api/                            # Feature-Based API Controllers / Routes
-│   ├── health.py                   # GET /api/v1/health
-│   ├── generation.py               # POST /api/v1/chat, /sentiment, /stream
-│   └── rag.py                      # POST /api/v1/ingest, /ask
+├── agents/                         # Autonomous Agent State Machines
+│   ├── langgraph_agent.py          # StateGraph, tools registry, error recovery, loop guards
+│   └── workflow_graph.py           # MultiStepWorkflowAgent, conditional routing, checkpointer, HITL
 │
-├── rag/                            # RAG Pipelines & Processing Tooling
-│   ├── chunking.py                 # Fixed-size & semantic chunking strategies
-│   └── embeddings.py               # Batch & single vector embeddings
+├── rag/                            # Retrieval-Augmented Generation Tooling
+│   ├── chunking.py                 # Fixed-size & semantic chunking
+│   ├── embeddings.py               # Vector embeddings via LiteLLM
+│   ├── bm25.py                     # BM25 sparse keyword index & RRF fusion
+│   ├── reranker.py                 # Cross-Encoder neural reranking
+│   ├── query_expansion.py          # LLM multi-query expansion
+│   └── llamaindex_pipeline.py      # LlamaIndex VectorStoreIndex + async thread bridge
 │
 └── tests/                          # Automated Integration Test Suite
-    ├── fixtures/                   # Isolated test data & sample docs
-    ├── test_api.py                 # Endpoint integration tests
-    └── test_rag.py                 # Chunking comparison tests
+    ├── test_api.py                 # Core generation & structured output tests
+    ├── test_rag.py                 # Chunking comparison tests
+    ├── test_production_rag.py      # Hybrid RAG + Cross-Encoder reranking tests
+    ├── test_llamaindex_rag.py      # LlamaIndex metadata filtering tests
+    ├── test_langgraph_agent.py     # LangGraph multi-turn agent & tool tests
+    └── test_langgraph_workflow.py  # Multi-step flow, conditional routing & HITL tests
 ```
 
 ---
@@ -48,12 +64,12 @@ py -m pip install -e .
 ```
 
 ### 2. Configure Environment
-Copy `.env.template` to `.env` in the project root:
+Create `.env` in the project root:
 ```env
-MODEL_ID=gemini/gemini-flash-latest
+MODEL_ID=gemini/gemini-3.1-flash-lite
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Database Config (PostgreSQL)
+# PostgreSQL Config
 DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_NAME=ai_project
@@ -61,49 +77,43 @@ DB_USER=postgres
 DB_PASSWORD=your_postgres_password_here
 ```
 
----
-
-## Running the Application
-
-Start the FastAPI server using Uvicorn:
+### 3. Run Application
 ```powershell
 py -m uvicorn ai_service_platform.main:app --reload
 ```
-Interactive Swagger API documentation will be available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+* **Swagger Interactive Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
 ## Available API Endpoints (`/api/v1`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/health` | Health check endpoint |
-| `POST` | `/api/v1/chat` | Generate text completion with token usage & cost tracking |
-| `POST` | `/api/v1/sentiment` | Extract structured sentiment analysis using Pydantic schema |
-| `POST` | `/api/v1/stream` | Stream token-by-token completion via Server-Sent Events (SSE) |
-| `POST` | `/api/v1/ingest` | Chunk, embed, and store document in vector/array database |
-| `POST` | `/api/v1/ask` | Retrieve grounded document context and execute Q&A |
+| Domain | Method | Endpoint | Description |
+|---|---|---|---|
+| **Health** | `GET` | `/api/v1/health` | Service health status check |
+| **Generation** | `POST` | `/api/v1/chat` | Text generation with token usage & cost tracking |
+| **Generation** | `POST` | `/api/v1/sentiment` | Structured Pydantic sentiment analysis |
+| **Generation** | `POST` | `/api/v1/stream` | Token streaming via Server-Sent Events (SSE) |
+| **RAG** | `POST` | `/api/v1/rag/ingest` | Chunk, embed, and store documents in pgvector |
+| **RAG** | `POST` | `/api/v1/rag/ask` | Production RAG (Hybrid BM25 + RRF + Cross-Encoder) |
+| **LlamaIndex** | `POST` | `/api/v1/llamaindex/ingest` | LlamaIndex ingestion with key-value metadata |
+| **LlamaIndex** | `POST` | `/api/v1/llamaindex/ask` | Grounded Q&A with exact-match metadata filtering |
+| **Agents** | `POST` | `/api/v1/agent/run` | Autonomous LangGraph state machine with tool calling |
+| **Workflows** | `POST` | `/api/v1/workflow/start` | Multi-step stateful flow with policy guardrails & HITL pause |
+| **Workflows** | `POST` | `/api/v1/workflow/resume` | Resume interrupted thread with supervisor approval decision |
+| **Workflows** | `GET` | `/api/v1/workflow/state/{id}` | Inspect StateSnapshot of active or interrupted thread |
+| **Workflows** | `GET` | `/api/v1/workflow/topology` | Export static compiled graph nodes & edges as native Mermaid syntax |
 
 ---
 
-## Running Automated Tests
+## Automated Testing & HTML Visual Reports
 
-Run the integration and RAG test suites:
+Run the automated test suite and generate an interactive standalone HTML report:
+
 ```powershell
-# Run API endpoint integration tests
-py -m ai_service_platform.tests.test_api
-
-# Run comparative chunking analysis (fixed-size vs semantic)
-py -m ai_service_platform.tests.test_rag
+# Run tests and generate HTML report
+py -m pytest ai_service_platform/tests --html=test_report.html --self-contained-html --capture=sys
 ```
 
----
-
-## Zero-Code Provider Swapping
-
-Swapping models or providers is zero-code. To switch from Gemini to OpenAI:
-```env
-MODEL_ID=openai/gpt-4o
-OPENAI_API_KEY=sk-...
-```
-LiteLLM handles request formatting, token counting, and provider routing transparently under the hood.
+* Open `test_report.html` in your browser to view:
+  * Pass/fail status and execution durations across all tests
+  * Expandable captured **input prompts, model responses, tool traces, and USD costs**

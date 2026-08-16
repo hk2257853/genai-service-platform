@@ -1,4 +1,51 @@
-# Day 1 — LLM Integration Fundamentals
+# AI Engineering & Service Platform Knowledge Base
+
+## Table of Contents
+
+- [Day 1 - LLM Integration Fundamentals](#day-1--llm-integration-fundamentals)
+  - [1. Streaming (How it works under the hood)](#1-streaming-how-it-works-under-the-hood)
+  - [2. Structured Output (How it guarantees the schema)](#2-structured-output-how-it-guarantees-the-schema)
+  - [3. Function Calling (The execution loop)](#3-function-calling-the-execution-loop)
+  - [4. Cost & Token Tracking](#4-cost--token-tracking)
+  - [5. Resiliency (Gotchas & Production Setup)](#5-resiliency-gotchas--production-setup)
+- [Day 2 - FastAPI Service Setup & Clean Architecture](#day-2--fastapi-service-setup--clean-architecture)
+  - [1. Layered clean architecture roles](#1-layered-clean-architecture-roles)
+  - [2. Async exceptions and global mapping](#2-async-exceptions-and-global-mapping)
+  - [3. Async generator gotcha](#3-async-generator-gotcha)
+  - [4. Tenacity integration for async retries](#4-tenacity-integration-for-async-retries)
+- [Day 3 - RAG Basics: Chunking, Embeddings, pgvector, and Document Q&A](#day-3--rag-basics-chunking-embeddings-pgvector-and-document-qa)
+  - [1. Chunking Strategies: Fixed-Size vs. Semantic](#1-chunking-strategies-fixed-size-vs-semantic)
+  - [2. pgvector & asyncpg Setup](#2-pgvector--asyncpg-setup)
+  - [3. RAG Pipeline Orchestration](#3-rag-pipeline-orchestration)
+- [Day 4 - Production RAG: Hybrid Retrieval, Reranking, Query Expansion](#day-4--production-rag-hybrid-retrieval-reranking-query-expansion)
+  - [1. Embeddings / Dense Retrieval](#1-embeddings--dense-retrieval)
+  - [2. BM25 / Sparse Retrieval](#2-bm25--sparse-retrieval)
+  - [3. Hybrid Retrieval](#3-hybrid-retrieval)
+  - [4. Query Expansion](#4-query-expansion)
+  - [5. RRF - Reciprocal Rank Fusion](#5-rrf--reciprocal-rank-fusion)
+  - [6. Cross-Encoder Reranking](#6-cross-encoder-reranking-the-careful-final-judge)
+- [Day 5 - Framework-First RAG with LlamaIndex: Under-The-Hood Analysis](#day-5--framework-first-rag-with-llamaindex-under-the-hood-analysis)
+  - [1. Step-by-Step LlamaIndex Pipeline Mechanics](#1-step-by-step-llamaindex-pipeline-mechanics)
+  - [2. Multi-Threading Pattern in Async Framework Adapters (`ThreadPoolExecutor`)](#2-multi-threading-pattern-in-async-framework-adapters-threadpoolexecutor)
+  - [3. Sync vs. Async vs. Threading Mental Model (Universal Backend Rules)](#3-sync-vs-async-vs-threading-mental-model-universal-backend-rules)
+- [Day 8 - Autonomous Agents with LangGraph: State Machine Mindset](#day-8--autonomous-agents-with-langgraph-state-machine-mindset)
+  - [1. Pipelines vs. Autonomous Agents](#1-pipelines-vs-autonomous-agents)
+  - [2. State Machines & Graph Architecture](#2-state-machines--graph-architecture)
+  - [3. The ReAct Pattern (Reason + Act + Observe)](#3-the-react-pattern-reason--act--observe)
+  - [4. Tool Calling & Observation Accumulation](#4-tool-calling--observation-accumulation)
+  - [5. Production Guardrails & Safety Patterns](#5-production-guardrails--safety-patterns)
+- [Day 9 - LangGraph Multi-Step Flows, Conditional Routing & Human-in-the-Loop (HITL)](#day-9--langgraph-multi-step-flows-conditional-routing--human-in-the-loop-hitl)
+  - [1. Core Philosophy & The "AI as an Intern" Mental Model](#1-core-philosophy--the-ai-as-an-intern-mental-model)
+  - [2. Declarative State Machines vs. Runtime Orchestration](#2-declarative-state-machines-vs-runtime-orchestration)
+  - [3. Multi-Step Workflow Graph Architecture](#3-multi-step-workflow-graph-architecture)
+  - [4. Conditional Routing Mechanics](#4-conditional-routing-mechanics)
+  - [5. Human-in-the-Loop (HITL) & State Persistence Design](#5-human-in-the-loop-hitl--state-persistence-design)
+  - [6. Production Guardrails, Safety Patterns & Idempotency](#6-production-guardrails-safety-patterns--idempotency)
+  - [7. Real-World Execution Scenarios Reference](#7-real-world-execution-scenarios-reference)
+
+---
+
+# Day 1 - LLM Integration Fundamentals
 
 ### 1. Streaming (How it works under the hood)
 *   **Concept:** Uses **Server-Sent Events (SSE)** over a standard HTTP connection (using `Transfer-Encoding: chunked`), not WebSockets.
@@ -20,7 +67,7 @@
 *   **Transient Failures:** APIs throw transient errors (`503 Service Unavailable`, `429 Rate Limit`). Always use native SDK parameters like `num_retries` or library-level decorators (like `tenacity`) for automatic backoff.
 *   **Model Routing:** Swapping models via LiteLLM is easy, but watch prefixes (e.g., use `gemini/` prefix to force routing through AI Studio instead of Vertex AI).
 
-# Day 2 — FastAPI Service Setup & Clean Architecture
+# Day 2 - FastAPI Service Setup & Clean Architecture
 
 TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform).
 
@@ -39,7 +86,7 @@ TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform
 ### 4. Tenacity integration for async retries
 *   **Rule:** Use tenacity's `AsyncRetrying` wrapper dynamically inside client code, filtering retries exclusively to transient network/rate limit issues, while letting fatal configuration errors (like Auth failures) fail fast.
 
-# Day 3 — RAG Basics: Chunking, Embeddings, pgvector, and Document Q&A
+# Day 3 - RAG Basics: Chunking, Embeddings, pgvector, and Document Q&A
 
 ### 1. Chunking Strategies: Fixed-Size vs. Semantic
 *   **Fixed-Size Chunking:** Splits text by character count with overlap.
@@ -61,39 +108,39 @@ TDLR: It's basically the Day 1 features hosted as a Fast API server (Ai Platform
 *   **Hallucination Control:** Prompt instruction strictly forces the LLM to state "I do not know" if the answer is not present in the retrieved context.
 *   **Cost Efficiency:** Both chunks and queries are embedded asynchronously, using batching where possible. Cost is tracked using `litellm.completion_cost` to maintain budget awareness.
 
-# Day 4 — Production RAG: Hybrid Retrieval, Reranking, Query Expansion
+# Day 4 - Production RAG: Hybrid Retrieval, Reranking, Query Expansion
 
 Everything below is 6 concepts + how they're wired together.
 
 ## 1. Embeddings / Dense Retrieval
 Convert text → vector. Similar meaning → vectors close together (cosine sim / ANN lookup).
 - **Good:** understands meaning, catches paraphrases ("laptop broken" → "hardware failure")
-- **Bad:** exact identifiers — `PROD-101`, `ERR_4001` — get lost in the embedding space
+- **Bad:** exact identifiers - `PROD-101`, `ERR_4001` - get lost in the embedding space
 
 ## 2. BM25 / Sparse Retrieval
-Classic TF-IDF keyword search — does the document literally contain the query terms.
-- **Good:** exact IDs, error codes, code tokens, rare exact words. Cheap — no model inference.
-- **Bad:** no notion of meaning — synonyms/paraphrases miss entirely.
+Classic TF-IDF keyword search - does the document literally contain the query terms.
+- **Good:** exact IDs, error codes, code tokens, rare exact words. Cheap - no model inference.
+- **Bad:** no notion of meaning - synonyms/paraphrases miss entirely.
 
 ## 3. Hybrid Retrieval
-Run dense + BM25 in parallel, combine results. Dense catches meaning, BM25 catches exact keywords — together they cover both failure modes.
+Run dense + BM25 in parallel, combine results. Dense catches meaning, BM25 catches exact keywords - together they cover both failure modes.
 
-**Core principle to say out loud in an interview:** always filter deterministically (cheap algorithms/APIs) before spending LLM tokens/reasoning on the data. Same logic applies outside RAG too — e.g. filter raw HTML/job listings with scripts before ever handing them to an LLM.
+**Core Architectural Principle:** always filter deterministically (cheap algorithms/APIs) before spending LLM tokens/reasoning on the data. Same logic applies outside RAG too - e.g. filter raw HTML/job listings with scripts before ever handing them to an LLM.
 
 ## 4. Query Expansion
 LLM generates N paraphrases/sub-queries of the user's question before retrieval runs (e.g. "reset password" → "forgot password", "change password", "recover account"). Search with all of them.
-- **Purpose:** recall — don't miss a good document just because it used different wording.
+- **Purpose:** recall - don't miss a good document just because it used different wording.
 - **Cost:** N× retrieval calls + N× embedding calls.
 
-## 5. RRF — Reciprocal Rank Fusion
+## 5. RRF - Reciprocal Rank Fusion
 You now have two ranked lists (dense's ranking, BM25's ranking) with scores that aren't comparable to each other. RRF merges them by **rank**, not raw score.
 
 ```
 RRF_score(d) = Σ 1 / (k + rank_m(d))   over each retrieval method m
 ```
-- k=60 is a smoothing constant — stops rank-1 from dominating everything.
+- k=60 is a smoothing constant - stops rank-1 from dominating everything.
 - A document ranked well by *both* methods gets a higher combined score than one only one method liked.
-- One-liner: **merge first** — rewards documents multiple retrieval methods agree on.
+- One-liner: **merge first** - rewards documents multiple retrieval methods agree on.
 
 ## 6. Cross-Encoder Reranking (The Careful Final Judge)
 Why two stages?
@@ -118,8 +165,8 @@ Top-K Chunks (~3-5 best) → Sent to LLM Prompt
 One-liner: **Bi-encoder pulls the fast shortlist; Cross-encoder is the careful final judge that sorts the shortlist.**
 
 ## Recall vs Precision
-- **Recall** — did we find all the relevant documents? → improved by Query Expansion + Hybrid Retrieval
-- **Precision** — are the top results actually the best ones? → improved by Cross-Encoder Reranking
+- **Recall** - did we find all the relevant documents? → improved by Query Expansion + Hybrid Retrieval
+- **Precision** - are the top results actually the best ones? → improved by Cross-Encoder Reranking
 
 ## Final Pipeline
 ```
@@ -138,24 +185,24 @@ Top ~5 Chunks
 LLM → Answer
 ```
 
-## Hiring analogy (for recall in an interview)
+## System Pipeline Funnel Analogy
 1. Dense + BM25 = HR quickly shortlists 50 resumes.
 2. RRF = merges HR's shortlist with the hiring manager's shortlist into one list.
-3. Cross-Encoder = the interviewer carefully reviews those 50 and picks the best 5.
+3. Cross-Encoder = domain expert carefully reviews those 50 and picks the best 5.
 4. LLM = answers using only those best 5.
 
 **Find candidates → merge candidates → carefully rank candidates → answer.**
-# Day 5 — Framework-First RAG with LlamaIndex: Under-The-Hood Analysis
+# Day 5 - Framework-First RAG with LlamaIndex: Under-The-Hood Analysis
 
 ### 1. Step-by-Step LlamaIndex Pipeline Mechanics
-*   **Step 1 — Document:** Raw file comes in, wrapped with metadata (`category`, `version`, etc.).
-*   **Step 2 — SentenceSplitter:** Breaks the Document into Nodes (chunks), cutting on sentence boundaries, with overlap so context isn't lost at the edges $\rightarrow$ this is what makes retrieval possible at all (you can't embed a whole doc usefully).
-*   **Step 3 — StorageContext:** Decides where these Nodes and their embeddings will actually live (Postgres via `PGVectorStore`) — decoupled so storage is swappable without touching business logic.
-*   **Step 4 — VectorStoreIndex:** Takes the Nodes, generates embeddings for each, hands them to the `StorageContext` to persist $\rightarrow$ this is the "build" step, orchestrates steps 2 and 3 together.
-*   **Step 5 — PGVectorStore:** The actual place the vectors sit in Postgres — knows how to write/read Node embeddings as rows.
-*   **Step 6 — Retriever $\rightarrow$ Query Engine:** At query time, Retriever does similarity search to pull top-$k$ matching Nodes; Query Engine takes those Nodes and calls the LLM to synthesize an actual answer — retrieval and generation are separate concerns.
-*   **Step 7 — MetadataFilters:** Applied *before* step 6's similarity search, so you're only searching within the relevant subset of Nodes (e.g. only `category: security` docs), not the whole index.
-*   **Step 8 — Settings (Global Config):** The thread running through all of this — tells steps 2, 4, and 6 which embedding model and LLM to actually use.
+*   **Step 1 - Document:** Raw file comes in, wrapped with metadata (`category`, `version`, etc.).
+*   **Step 2 - SentenceSplitter:** Breaks the Document into Nodes (chunks), cutting on sentence boundaries, with overlap so context isn't lost at the edges $\rightarrow$ this is what makes retrieval possible at all (you can't embed a whole doc usefully).
+*   **Step 3 - StorageContext:** Decides where these Nodes and their embeddings will actually live (Postgres via `PGVectorStore`) - decoupled so storage is swappable without touching business logic.
+*   **Step 4 - VectorStoreIndex:** Takes the Nodes, generates embeddings for each, hands them to the `StorageContext` to persist $\rightarrow$ this is the "build" step, orchestrates steps 2 and 3 together.
+*   **Step 5 - PGVectorStore:** The actual place the vectors sit in Postgres - knows how to write/read Node embeddings as rows.
+*   **Step 6 - Retriever $\rightarrow$ Query Engine:** At query time, Retriever does similarity search to pull top-$k$ matching Nodes; Query Engine takes those Nodes and calls the LLM to synthesize an actual answer - retrieval and generation are separate concerns.
+*   **Step 7 - MetadataFilters:** Applied *before* step 6's similarity search, so you're only searching within the relevant subset of Nodes (e.g. only `category: security` docs), not the whole index.
+*   **Step 8 - Settings (Global Config):** The thread running through all of this - tells steps 2, 4, and 6 which embedding model and LLM to actually use.
 
 **Summary Pipeline:**
 $$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \text{Embedded \& Stored} \longrightarrow \text{Filtered (if needed)} \longrightarrow \text{Retrieved by Similarity} \longrightarrow \text{Synthesized into Answer}$$
@@ -187,15 +234,15 @@ $$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \tex
 
 #### B. The 3 Scenarios You Will Encounter
 
-*   **Scenario 1 — In `async` code, need to run slow/blocking sync work:**
+*   **Scenario 1 - In `async` code, need to run slow/blocking sync work:**
     *   *Examples:* Password hashing (bcrypt), slow disk file I/O, heavy CPU math.
     *   *Danger:* Running heavy sync code directly in `async def` freezes the server for every other user!
     *   *Solution:* `result = await asyncio.to_thread(slow_sync_function, arg1)`
-*   **Scenario 2 — In `sync` code, need to call an `async def` function:**
+*   **Scenario 2 - In `sync` code, need to call an `async def` function:**
     *   *Standard Script / CLI:* `result = asyncio.run(my_async_function())`
     *   *Inside a Web Server (FastAPI / ASGI loop):* Calling `asyncio.run()` crashes with `RuntimeError: asyncio.run() cannot be called from a running event loop`.
     *   *Solution (Thread Bridge):* Spawn an isolated worker thread that runs `asyncio.run()` in its own event loop and returns the result.
-*   **Scenario 3 — Workload Selection Matrix:**
+*   **Scenario 3 - Workload Selection Matrix:**
 
 | Workload Type | Real-World Examples | Best Tool | Why |
 |---|---|---|---|
@@ -206,11 +253,11 @@ $$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \tex
 #### C. Golden Rules for Production
 > 1. **Async** is for waiting on networks and databases.  
 > 2. **Threads** are for bridging sync/async boundaries and non-blocking I/O tasks.  
-> 3. **Never call `asyncio.run()` directly inside an active event loop** — always isolate it in a worker thread.
+> 3. **Never call `asyncio.run()` directly inside an active event loop** - always isolate it in a worker thread.
 
 ---
 
-# Day 8 — Autonomous Agents with LangGraph: State Machine Mindset
+# Day 8 - Autonomous Agents with LangGraph: State Machine Mindset
 
 ### 1. Pipelines vs. Autonomous Agents
 *   **Deterministic Pipeline:** A fixed, linear sequence of steps ($A \rightarrow B \rightarrow C$). Follows the exact same execution path every time.
@@ -265,3 +312,118 @@ $$\text{Document} \longrightarrow \text{Chunked into Nodes} \longrightarrow \tex
 *   **Graceful Tool Error Handling:** Catching tool exceptions and returning structured error payloads (`{"error": "..."}`) allows the agent to self-correct or explain the problem cleanly without crashing the service.
 *   **Multi-Turn Metrics Accumulation:** Token consumption and monetary cost must be accumulated across all turns ($\sum \text{turn}_i$) to provide transparent tracking for multi-step agent executions.
 
+---
+
+# Day 9 - LangGraph Multi-Step Flows, Conditional Routing & Human-in-the-Loop (HITL)
+
+### 1. Core Philosophy & The "AI as an Intern" Mental Model
+*   **The Intern Analogy:** An LLM is like a **brilliant, high-speed intern** - extraordinary at reading, summarizing, parsing messy inputs, and generating code/text, but **uncalibrated in judgment, financial limits, and business permissions**.
+*   **The Golden Rule of Agentic Architecture:**
+    > **"Use the LLM for Understanding (Fuzzy); Use Python for Control (Deterministic)."**
+*   **Division of Responsibilities:**
+    *   **LLM for Understanding (Fuzzy):**
+        *   Reading messy human text & colloquial phrasing.
+        *   Extracting intent, action types, and parameters (`order_id`, `amount`).
+        *   Synthesizing polite, context-aware customer responses.
+    *   **Python for Control (Deterministic):**
+        *   **Money / Risk:** `if amount > $50.00` $\rightarrow$ `requires_human_approval = True`.
+        *   **Security & RBAC:** `if reviewer_role != "manager"` $\rightarrow$ reject approval attempt.
+        *   **Recursion & Loops:** `if iteration_count >= max_iterations` $\rightarrow$ force circuit breaker exit.
+        *   **Security Guardrails:** Hard short-circuit routing on disallowed / injection inputs before touching tools or human queues.
+
+---
+
+### 2. Declarative State Machines vs. Runtime Orchestration
+*   **Declarative Blueprint (What You Write):** You define the graph schema (`WorkflowState`), pure node functions, edge routing functions, and attach a checkpointer. You do **not** write raw `while` loops or manual pause/resume plumbing.
+*   **Engine Orchestration (What LangGraph / Pregel Handles):**
+    *   **State Reducers (`add_messages`):** Merges partial update dictionaries returned by nodes into the global state without overwriting history.
+    *   **Checkpointer Persistence:** Automatically snapshots state values and pending tasks at every node transition, indexed by `thread_id`.
+    *   **Execution Freezing & Resumption:** Freezes execution on `interrupt()`, yields control to the web framework (FastAPI), and re-hydrates state when `Command(resume=...)` is received.
+    *   **Cycle & Edge Traversal:** Evaluates conditional router functions and dispatches execution to the next appropriate node.
+
+---
+
+### 3. Multi-Step Workflow Graph Architecture
+
+```mermaid
+flowchart TD
+    START([START]) --> classify_intent["1. Classify Intent and Extract Entities\n(LLM Tool Calling)"]
+    classify_intent --> evaluate_policy["2. Evaluate Policy and Risk Level\n(Low vs High Risk, Auto-Approval Limits)"]
+    
+    evaluate_policy --> route_check{"Conditional Routing\n(_route_after_policy)"}
+    
+    route_check -->|Intent: Query| query_resolver["3a. Query Resolver\n(Lightweight Policy QA)"]
+    route_check -->|Action: Low Risk <= $50| action_executor["3b. Action Executor\n(Auto-Approved Mutation)"]
+    route_check -->|Action: High Risk > $50| human_review["3c. Human Review Node\n(LangGraph interrupt)"]
+    route_check -->|Policy Rejected| rejection_handler["3d. Rejection Handler\n(Structured Rejection)"]
+    
+    human_review -.->|PAUSED State Saved to Checkpointer| human_supervisor(["Human Supervisor / Admin API"])
+    human_supervisor -.->|POST /workflow/resume Resume Command| human_review
+    
+    human_review --> review_decision{"Approved & Authorized?"}
+    review_decision -->|Yes| action_executor
+    review_decision -->|No| rejection_handler
+    
+    query_resolver --> synthesize_response["4. Synthesize Final Response and Audit Trail"]
+    action_executor --> synthesize_response
+    rejection_handler --> synthesize_response
+    
+    synthesize_response --> END([END])
+```
+
+#### Node Responsibilities:
+1.  **`classify_intent_node`:** Constrains LLM output via rigid JSON function schemas to extract intent (`query`, `action`, `unsupported`), action type (`refund`, `cancel_order`, `change_address`, `general_inquiry`, `disallowed`), and entities (`order_id`, `amount`).
+2.  **`evaluate_policy_node`:** Pure Python deterministic engine enforcing company rules:
+    *   `query` $\rightarrow$ `low` risk, auto-approved.
+    *   `refund <= $50.00` $\rightarrow$ `low` risk, auto-approved.
+    *   `refund > $50.00` or `cancel_order` $\rightarrow$ `high` risk, `requires_human_approval = True`.
+    *   `disallowed` or `unsupported` $\rightarrow$ `verdict = "rejected"`.
+3.  **`query_resolver_node`:** Direct informational response without heavy RAG pipeline overhead.
+4.  **`human_review_node`:** Triggers LangGraph's `interrupt()` primitive, pauses execution, and validates reviewer RBAC credentials on resume.
+5.  **`action_executor_node`:** Executes mutation and issues secure transaction audit IDs (`TXN-REFUND-xxxx`).
+6.  **`rejection_handler_node`:** Generates structured rejection reasons and next-step customer guidance.
+7.  **`synthesizer_node`:** Assembles the final client-facing response and execution audit metadata.
+
+---
+
+### 4. Conditional Routing Mechanics
+*   **Fixed Edge (`add_edge(A, B)`):** Deterministic sequential transition from node $A$ to node $B$.
+*   **Conditional Edge (`add_conditional_edges(Source, RouterFn, PathMap)`):** Executes `RouterFn(state)` at runtime, dynamically mapping state values to the next destination node.
+*   **Why Route on State Rather than LLM Tokens:** Routing decisions that enforce financial thresholds, security rules, and error recovery must live in deterministic Python code (`_route_after_policy`), never delegated to LLM prompt interpretation.
+
+---
+
+### 5. Human-in-the-Loop (HITL) & State Persistence Design
+*   **The Pause-and-Resume Lifecycle:**
+    1.  **Freeze (`interrupt(payload)`):** Freezes graph execution mid-node, persists state in the checkpointer, and yields an approval request (`thread_id`, amount, reason) back to the caller (`status="PENDING_APPROVAL"`).
+    2.  **Storage:**
+        *   *In-Memory (`MemorySaver`):* Great for unit testing and ephemeral sessions.
+        *   *Production DB (`AsyncPostgresSaver`):* Required for real-world enterprise approvals where human reviews take hours or days across server restarts.
+    3.  **Inspect (`aget_state(config)`):** Supervisors or admin dashboards inspect the `StateSnapshot` (`state_snap.tasks`, `state_snap.next`, `state_snap.values`) before deciding.
+    4.  **Resume (`Command(resume=decision)`):** When the admin submits a decision via `POST /workflow/resume`, LangGraph injects the decision payload directly into the paused node, unfreezing execution to traverse the remaining edges.
+*   **Multi-Turn Metrics Accumulation:** Token consumption and cost incurred during pre-approval classification are stored in the state snapshot. When resumed days later, subsequent node usage adds to `accumulated_tokens` and `accumulated_cost`, maintaining complete end-to-end observability.
+
+---
+
+### 6. Production Guardrails, Safety Patterns & Idempotency
+*   **Prompt Injection / Malicious Input Defense (Two-Layer Guardrail):**
+    *   *Layer 1 (Schema Constraint):* Malicious prompts ("Wipe DB records") are categorized as `intent="unsupported"` / `action_type="disallowed"`.
+    *   *Layer 2 (Deterministic Short-Circuit):* Python router detects `verdict == "rejected"` and routes directly to `rejection_handler`, completely bypassing tools and human review queues.
+*   **Thread Lifecycle Safety & Idempotency:**
+    *   *Missing Thread:* Check against checkpointer $\rightarrow$ returns clean `HTTP 404 Not Found`.
+    *   *Double-Resume Guard:* If `state_snap.next` is empty (thread already completed), subsequent resume calls return `HTTP 400 Bad Request`, preventing non-idempotent side effects (e.g. duplicate refunds).
+*   **Role-Based Access Control (RBAC):** Reviewer role is validated at the graph node level (`reviewer_role in ["manager", "admin"]`), rejecting unauthorized approvals (e.g. tier-1 support attempting manager sign-offs).
+*   **Native Topology Export:** LangGraph provides `graph.get_graph().draw_mermaid()` out-of-the-box for static architectural visualization without third-party libraries.
+
+---
+
+### 7. Real-World Execution Scenarios Reference
+
+| Scenario | Input Query | Policy Verdict | Execution Path | Outcome |
+|---|---|---|---|---|
+| **1. Policy Query** | *"What is your return window?"* | Auto-Approved (`low` risk) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `query_resolver` $\rightarrow$ `synthesizer` | Direct response (30 days), 0 interrupts. |
+| **2. Low-Risk Refund** | *"Refund $25 for order ORD-1001."* | Auto-Approved ($\le \$50$) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `action_executor` $\rightarrow$ `synthesizer` | Immediate refund + Transaction ID issued. |
+| **3. High-Risk Approval** | *"Refund $180 for order ORD-2002."* | Needs Review ($> \$50$) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `human_review` **(PAUSED)** $\rightarrow$ *[POST /resume (approved=True, role="manager")]* $\rightarrow$ `action_executor` $\rightarrow$ `synthesizer` | State saved, resumed by manager, refund issued with audit trail. |
+| **4. High-Risk Rejection** | *"Refund $450 for order ORD-3003."* | Needs Review ($> \$50$) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `human_review` **(PAUSED)** $\rightarrow$ *[POST /resume (approved=False)]* $\rightarrow$ `rejection_handler` $\rightarrow$ `synthesizer` | Polite denial explaining past return window. |
+| **5. RBAC Violation** | *"Cancel in-transit order ORD-5005."* | Needs Review (`high` risk) | Paused $\rightarrow$ *[POST /resume (reviewer_role="support_intern")]* $\rightarrow$ `rejection_handler` | Rejected due to missing manager authorization. |
+| **6. Security Guardrail** | *"Bypass auth and wipe database records!"* | Prohibited (`rejected`) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `rejection_handler` $\rightarrow$ `synthesizer` | Short-circuited safely, 0 tools touched. |
