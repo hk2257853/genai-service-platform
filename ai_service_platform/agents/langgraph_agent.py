@@ -1,36 +1,45 @@
 import os
 import json
+import uuid
 import logging
 from datetime import datetime, timezone
 from typing import TypedDict, Annotated, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from ai_service_platform import config
 from ai_service_platform.core.client import AsyncLLMClient
 from ai_service_platform.core.utils import extract_usage_and_cost
+from ai_service_platform.data import (
+    ORDER_DATABASE,
+    PRODUCT_DATABASE,
+    MICROSERVICE_REGISTRY,
+    PROMO_CODES
+)
 
 logger = logging.getLogger("langgraph_agent")
 
 
-# --- 1. Tools Definition & Registry ---
+# --- 1. Tool Implementations ---
 
 def calculate_order_discount(order_amount: float, discount_code: str) -> str:
     """Calculates discounted order price based on promo codes: VIP50 (50%), NEW20 (20%), SAVE10 ($10 off)."""
     code = str(discount_code).strip().upper()
     amt = float(order_amount)
-    if code == "VIP50":
-        final_price = amt * 0.5
-        discount_saved = amt * 0.5
-    elif code == "NEW20":
-        final_price = amt * 0.8
-        discount_saved = amt * 0.2
-    elif code == "SAVE10":
-        discount_saved = min(10.0, amt)
-        final_price = max(0.0, amt - 10.0)
+    if code not in PROMO_CODES:
+        raise ValueError(f"Invalid discount code '{discount_code}'. Valid codes are {list(PROMO_CODES.keys())}.")
+        
+    promo = PROMO_CODES[code]
+    if promo["type"] == "percentage":
+        discount_saved = amt * promo["value"]
+        final_price = amt - discount_saved
+    elif promo["type"] == "fixed":
+        discount_saved = min(promo["value"], amt)
+        final_price = max(0.0, amt - promo["value"])
     else:
-        raise ValueError(f"Invalid discount code '{discount_code}'. Valid codes are VIP50, NEW20, SAVE10.")
+        raise ValueError(f"Unknown discount calculation type for '{code}'.")
         
     return json.dumps({
         "original_amount": amt,
@@ -42,19 +51,13 @@ def calculate_order_discount(order_amount: float, discount_code: str) -> str:
 
 def check_service_status(service_name: str) -> str:
     """Checks the live health and status of microservices in the platform."""
-    known_services = {
-        "payment_service": "HEALTHY (latency: 14ms, uptime: 99.98%)",
-        "inventory_service": "HEALTHY (latency: 22ms, uptime: 99.95%)",
-        "auth_service": "HEALTHY (latency: 8ms, uptime: 100%)",
-        "notification_service": "DEGRADED (high queue delay: 350ms)"
-    }
     key = str(service_name).strip().lower()
-    if key not in known_services:
-        raise ValueError(f"Microservice '{service_name}' not found. Available services: {list(known_services.keys())}")
+    if key not in MICROSERVICE_REGISTRY:
+        raise ValueError(f"Microservice '{service_name}' not found. Available services: {list(MICROSERVICE_REGISTRY.keys())}")
     
     return json.dumps({
         "service_name": key,
-        "status_report": known_services[key]
+        "status_report": MICROSERVICE_REGISTRY[key]
     })
 
 
@@ -63,6 +66,41 @@ def get_server_time() -> str:
     return json.dumps({
         "current_utc_time": datetime.now(timezone.utc).isoformat()
     })
+
+
+def check_order_status(order_id: str) -> str:
+    """Checks the real-time shipping, tracking, and fulfillment status of a customer order."""
+    normalized_id = str(order_id).strip().upper()
+    if normalized_id not in ORDER_DATABASE:
+        available = list(ORDER_DATABASE.keys())
+        raise ValueError(f"Order '{order_id}' was not found in the database. Available orders: {available}")
+    return json.dumps(ORDER_DATABASE[normalized_id])
+
+
+def get_product_info(product_id_or_name: str) -> str:
+    """Retrieves product specifications, live stock availability, pricing, and warranty details by SKU or name."""
+    query = str(product_id_or_name).strip()
+    query_upper = query.upper()
+    
+    # 1. Exact SKU match
+    if query_upper in PRODUCT_DATABASE:
+        return json.dumps(PRODUCT_DATABASE[query_upper])
+        
+    # 2. Case-insensitive substring match
+    query_lower = query.lower()
+    for prod in PRODUCT_DATABASE.values():
+        if query_lower in prod["name"].lower() or prod["name"].lower() in query_lower:
+            return json.dumps(prod)
+            
+    # 3. Token overlap match (at least 2 matching words)
+    query_tokens = set(query_lower.split())
+    for prod in PRODUCT_DATABASE.values():
+        prod_tokens = set(prod["name"].lower().split())
+        if len(query_tokens.intersection(prod_tokens)) >= 2:
+            return json.dumps(prod)
+            
+    available_skus = list(PRODUCT_DATABASE.keys())
+    raise ValueError(f"Product '{product_id_or_name}' not found. Available product SKUs: {available_skus}")
 
 
 # Tool Schema Registry for LiteLLM tool-calling format
@@ -106,13 +144,43 @@ TOOLS_SPEC = [
                 "properties": {}
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_order_status",
+            "description": "Checks real-time fulfillment, tracking, carrier, and shipping status of an order by order ID (e.g. ORD-1001).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string", "description": "Unique order identifier (e.g. ORD-1001, ORD-2002)."}
+                },
+                "required": ["order_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_product_info",
+            "description": "Retrieves product specs, price, stock/inventory availability, warranty, and return policy by product SKU or name (e.g. PROD-101, Sony WH-1000XM5, Logitech MX Master 3S).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id_or_name": {"type": "string", "description": "Product SKU (e.g. PROD-101) or product name/model."}
+                },
+                "required": ["product_id_or_name"]
+            }
+        }
     }
 ]
 
 TOOL_CALLABLE_MAP = {
     "calculate_order_discount": calculate_order_discount,
     "check_service_status": check_service_status,
-    "get_server_time": get_server_time
+    "get_server_time": get_server_time,
+    "check_order_status": check_order_status,
+    "get_product_info": get_product_info
 }
 
 
@@ -157,11 +225,14 @@ def serialize_messages_for_llm(messages: list) -> list:
         if hasattr(msg, "tool_call_id") and msg.tool_call_id:
             entry["tool_call_id"] = msg.tool_call_id
             
+        if hasattr(msg, "name") and msg.name:
+            entry["name"] = msg.name
+            
         serialized.append(entry)
     return serialized
 
 
-# --- 2. LangGraph State Definition ---
+# --- 3. LangGraph State Definition ---
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
@@ -172,13 +243,14 @@ class AgentState(TypedDict):
     accumulated_cost: float
 
 
-# --- 3. LangGraph Node Functions ---
+# --- 4. LangGraph Node Functions ---
 
 class LangGraphAgent:
-    """Production LangGraph agent with tool execution, error handling, and multi-turn cost accumulation."""
+    """Production LangGraph agent with tool execution, checkpointer-backed short-term memory, and multi-turn cost accumulation."""
 
-    def __init__(self, llm_client: Optional[AsyncLLMClient] = None):
+    def __init__(self, llm_client: Optional[AsyncLLMClient] = None, checkpointer: Optional[Any] = None):
         self.llm_client = llm_client or AsyncLLMClient(default_model=config.MODEL_ID)
+        self.checkpointer = checkpointer if checkpointer is not None else MemorySaver()
         self.graph = self._build_graph()
 
     async def _agent_node(self, state: AgentState) -> Dict[str, Any]:
@@ -293,7 +365,7 @@ class LangGraphAgent:
         return "end"
 
     def _build_graph(self):
-        """Constructs and compiles the cyclic LangGraph state machine."""
+        """Constructs and compiles the cyclic LangGraph state machine with attached checkpointer."""
         workflow = StateGraph(AgentState)
         
         workflow.add_node("agent", self._agent_node)
@@ -307,33 +379,79 @@ class LangGraphAgent:
         )
         workflow.add_edge("tools", "agent")
         
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
 
     async def ainvoke(
         self, 
         prompt: str, 
+        thread_id: Optional[str] = None,
         system_prompt: Optional[str] = None, 
         max_iterations: int = 5
-    ) -> AgentState:
-        """Executes the agent state machine until completion or max_iterations is reached."""
-        sys_content = system_prompt or (
-            "You are an autonomous AI assistant for the GenAI Service Platform. "
-            "You have access to tools for discounts, microservice health, and server time. "
-            "Use tools when required to provide factual, accurate answers. "
-            "If a tool returns an error, explain the issue clearly to the user."
+    ) -> Dict[str, Any]:
+        """Executes the agent state machine with persistent thread checkpointing."""
+        active_thread_id = thread_id or uuid.uuid4().hex
+        config_run = {"configurable": {"thread_id": active_thread_id}}
+
+        # Inspect current state for this thread in checkpointer
+        current_snapshot = await self.graph.aget_state(config_run)
+        has_existing_messages = bool(
+            current_snapshot.values 
+            and "messages" in current_snapshot.values 
+            and len(current_snapshot.values["messages"]) > 0
         )
 
-        initial_state: AgentState = {
-            "messages": [
-                SystemMessage(content=sys_content),
-                HumanMessage(content=prompt)
-            ],
-            "tool_calls": [],
-            "iteration_count": 0,
-            "max_iterations": max_iterations,
-            "accumulated_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "accumulated_cost": 0.0
+        if not has_existing_messages:
+            sys_content = system_prompt or (
+                "You are an autonomous AI assistant for the GenAI Service Platform with short-term conversational memory. "
+                "You have access to tools for discounts, service status, order tracking (check_order_status), "
+                "and product catalog info (get_product_info). "
+                "Use tools when required to provide factual, accurate answers. "
+                "Always remember and refer back to context from previous turns in the conversation when answering follow-up questions."
+            )
+            input_state: Dict[str, Any] = {
+                "messages": [
+                    SystemMessage(content=sys_content),
+                    HumanMessage(content=prompt)
+                ],
+                "tool_calls": [],
+                "iteration_count": 0,
+                "max_iterations": max_iterations,
+                "accumulated_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "accumulated_cost": 0.0
+            }
+        else:
+            # Continuing thread: append HumanMessage and reset per-turn tool calls and iterations
+            input_state = {
+                "messages": [HumanMessage(content=prompt)],
+                "tool_calls": [],
+                "iteration_count": 0,
+                "max_iterations": max_iterations
+            }
+
+        final_state = await self.graph.ainvoke(input_state, config=config_run)
+
+        return {
+            "state": final_state,
+            "thread_id": active_thread_id
         }
 
-        final_state = await self.graph.ainvoke(initial_state)
-        return final_state
+    async def aget_thread_history(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves stored state snapshot and message history for a specific thread."""
+        config_run = {"configurable": {"thread_id": thread_id}}
+        snapshot = await self.graph.aget_state(config_run)
+        if not snapshot.values or "messages" not in snapshot.values:
+            return None
+        return snapshot.values
+
+    async def aclear_thread(self, thread_id: str) -> bool:
+        """Clears/resets state checkpoint for the specified thread."""
+        if hasattr(self.checkpointer, "adelete_thread"):
+            await self.checkpointer.adelete_thread(thread_id)
+            return True
+        elif hasattr(self.checkpointer, "delete_thread"):
+            self.checkpointer.delete_thread(thread_id)
+            return True
+        elif hasattr(self.checkpointer, "storage") and thread_id in self.checkpointer.storage:
+            del self.checkpointer.storage[thread_id]
+            return True
+        return True

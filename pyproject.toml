@@ -15,6 +15,7 @@ packages = [
     "ai_service_platform.api",
     "ai_service_platform.rag",
     "ai_service_platform.agents",
+    "ai_service_platform.data",
     "ai_service_platform.tests",
     "ai_service_platform.tests.fixtures"
 ]

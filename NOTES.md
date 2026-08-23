@@ -427,3 +427,39 @@ flowchart TD
 | **4. High-Risk Rejection** | *"Refund $450 for order ORD-3003."* | Needs Review ($> \$50$) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `human_review` **(PAUSED)** $\rightarrow$ *[POST /resume (approved=False)]* $\rightarrow$ `rejection_handler` $\rightarrow$ `synthesizer` | Polite denial explaining past return window. |
 | **5. RBAC Violation** | *"Cancel in-transit order ORD-5005."* | Needs Review (`high` risk) | Paused $\rightarrow$ *[POST /resume (reviewer_role="support_intern")]* $\rightarrow$ `rejection_handler` | Rejected due to missing manager authorization. |
 | **6. Security Guardrail** | *"Bypass auth and wipe database records!"* | Prohibited (`rejected`) | `classify` $\rightarrow$ `evaluate` $\rightarrow$ `rejection_handler` $\rightarrow$ `synthesizer` | Short-circuited safely, 0 tools touched. |
+
+## Day 10 — Tools + Short-Term Memory
+
+### 1. Short-Term vs. Long-Term Memory
+- **Short-Term Memory:** The running conversation transcript, scoped to a thread/session, living in the checkpointer (RAM or DB row). It answers *"what did we just talk about"*.
+- **Long-Term Memory:** Persistent knowledge across sessions/users, usually in a vector DB (semantic search over past interactions) or a knowledge graph. It answers *"what do I know about this user/domain in general"*, retrieved via RAG rather than kept in the live context window.
+- **LLM Statelessness:** The LLM itself is completely stateless between calls. "Memory" simply means re-sending the accumulated message history on every call; there is no persistent model state anywhere.
+
+### 2. Within-Call Accumulation vs. Cross-Call Persistence
+- **Within-Call (Days 8/9):** Message accumulation occurred strictly *within* a single `.ainvoke()` call — the ReAct loop (`agent_node` → `tool_node` → `agent_node` → `END`) built up state in volatile memory during one execution, which was then discarded once the call returned. Without a checkpointer, nothing persisted. Call 2 arrived with a totally empty state, so follow-up prompts like *"What carrier is delivering it?"* had no context for *"it"*.
+- **Cross-Call (Day 10):** `thread_id` is the partition key that makes *cross-call* persistence possible at all. It is not an optional label bolted onto an existing feature, but the mechanism allowing the checkpointer to reload the previous call's state instead of starting fresh.
+- **Session Isolation (Stopping Context Bleeding):** `thread_id` strictly partitions state across sessions, ensuring conversation memory never bleeds from User A to User B across concurrent client requests.
+
+### 3. LangGraph Checkpointing & State Management
+- **`MemorySaver` Mechanics:** In-memory store where snapshots are keyed by `(thread_id, checkpoint_id)`. Each graph superstep gets its own checkpoint (not just one snapshot per thread). On `.ainvoke()` with a given `thread_id`, LangGraph hydrates the latest snapshot for that thread as the starting state before the graph runs.
+- **`StateSnapshot` & Inspection:** Represents the full state (messages + custom fields) as of a given checkpoint, plus metadata (active values, channel versions, pending tasks). `aget_state(config)` returns the current snapshot; `get_state_history()` returns all snapshots in order to reconstruct an execution trace.
+- **Thread Eviction:** `adelete_thread(thread_id)` is the native API to evict all history for a thread from the checkpointer without needing custom hand-rolled deletion logic.
+- **Storage Backends:** `MemorySaver` stores state in RAM (wiped on restart; suitable for dev/single-instance), while `AsyncPostgresSaver` persists state to PostgreSQL (survives restarts; required for multi-instance/production) using the same checkpointer interface.
+
+### 4. Coreference Resolution
+- **Mechanism:** There is no dedicated or special logic for coreference resolution. The full transcript (System → Human → AI tool-call → Tool output → AI answer → next Human turn) is passed into the model on every call.
+- **Transformer Attention:** The model's attention mechanism attends back to antecedent tokens (`"ORD-1001"`, `"FedEx"`) already present in context, resolving *"it"* or *"that order"* directly from visible context just like any other pronoun.
+
+### 5. Token Growth Economics & Context Window Management
+- **Token Scaling Law:** Per-turn prompt tokens grow linearly ($O(N)$ per call) because turn *k* resends the system prompt + all prior turns + the new input. Total tokens spent across a full $N$-turn conversation scale $O(N^2)$ if left unmanaged, as earlier turns are re-sent and re-billed on every subsequent call.
+- **Production Management Strategies:**
+  - **Sliding Window (`trim_messages`):** Keep the system prompt + last $K$ messages, dropping older ones from the sent context.
+  - **Summarization Node (`ConversationSummaryBuffer` pattern):** Once message count crosses a threshold, compress older turns into one summary message injected at the top.
+  - **Tool Output Pruning:** Truncate/scrub large tool payloads (e.g., big JSON dumps) from older turns once their key facts are already reflected in the agent's answer.
+
+### 6. Architectural Alternatives & Tradeoffs
+- **Stateless Client-Side Alternative:** The client resends the full `messages: []` array on every request while the backend stays fully stateless.
+- **Downsides of Client-Side History:**
+  - Bandwidth overhead that grows with conversation length.
+  - Lack of server-side coordination for async processes or human approvals.
+  - Security vulnerability: clients can tamper with past AI/tool messages since the server never independently retains or validates the audit trail.
