@@ -463,3 +463,89 @@ flowchart TD
   - Bandwidth overhead that grows with conversation length.
   - Lack of server-side coordination for async processes or human approvals.
   - Security vulnerability: clients can tamper with past AI/tool messages since the server never independently retains or validates the audit trail.
+
+## Day 11 — MCP Basics & Architecture
+
+### 1. The Core Problem: The $M \times N$ Integration Bottleneck
+- **$M \times N$ vs. $M + N$ Architecture:** Without a shared open standard, connecting $M$ AI clients (LangChain, Claude Desktop, Cursor, custom agent frameworks) to $N$ data sources and tools (Postgres, GitHub, Slack, internal APIs) requires $M \times N$ bespoke integration adapters.
+- **Standardized Interface:** Model Context Protocol (MCP) standardizes this communication layer into an $M + N$ model. A server built once exposes tools and resources that are instantly consumable by any compliant client.
+
+### 2. Protocol Foundation & Decoupling
+- **Underlying Protocol:** JSON-RPC 2.0 operating over pluggable transport layers (STDIO or SSE/HTTP).
+- **Execution Decoupling:** Decouples tool and data execution from the agent orchestrator. The orchestrator only needs a generic MCP client driver instead of application-specific integration SDKs.
+- **Connection Handshake:** Before tool or resource execution, the client sends an `initialize` request specifying its protocol version and capabilities. The server replies with its supported capabilities (`tools`, `resources`, `prompts`, `logging`), negotiating feature compatibility upfront.
+
+### 3. The Three MCP Primitives
+| Primitive | Controlled by | Purpose | Side Effects | Protocol Methods |
+|---|---|---|---|---|
+| **Tools** | Model (LLM runtime decision) | Executable functions invoked during agentic loops | Can read or mutate state | `tools/list`, `tools/call` |
+| **Resources** | App / Client | Passive, read-only context attached via URI (schemas, logs, docs) | None (read-only) | `resources/list`, `resources/read` |
+| **Prompts** | User / UI | Pre-packaged prompt templates and slash-commands | Passive retrieval | `prompts/list`, `prompts/get` |
+
+### 4. Primitive Design Rationale: Tools vs. Resources
+- **Direct Context Attachment (Resources):** Resources allow the host application to attach reference context (such as database schemas or documentation) directly into the prompt without consuming a model reasoning step deciding whether to invoke a tool. This reduces latency, token spend, and non-deterministic tool failures.
+- **Dynamic Parameterized Agency (Tools):** Tools grant the model runtime agency to query specific data slices or execute state-mutating actions on demand.
+- **Separation of Concerns:** Forcing all data retrieval through tools offloads deterministic application-level context routing onto model inference.
+
+### 5. Transport Layers: STDIO vs. SSE/HTTP
+- **STDIO Transport:**
+  - **Mechanics:** The client launches the server as a local child subprocess and communicates over standard I/O (`stdin`/`stdout`).
+  - **Strengths:** Zero network configuration, sub-millisecond local IPC latency, and OS-level process isolation. Ideal for local desktop agents and IDE extensions.
+  - **Critical Gotcha:** Any stray `print()` statement in server code writes directly to `stdout`, corrupting the raw JSON-RPC stream. All server logging must be directed to `stderr` or emitted via MCP's logging protocol.
+- **SSE / HTTP Transport:**
+  - **Mechanics:** The server runs as a standalone HTTP service. The client opens a persistent Server-Sent Events stream (`GET /sse`) to receive server-sent events and sends requests via `POST /messages`.
+  - **Strengths:** Required for remote, distributed, containerized (Docker/Kubernetes), and multi-tenant architectures.
+  - **Tradeoffs:** Introduces network routing complexity, connection lifecycle/reconnection handling, and authentication propagation.
+
+### 6. Security Model & Execution Boundaries
+- **Explicit Surface Exposure:** MCP servers only expose explicitly decorated tools and resources. The LLM has zero arbitrary system, network, or filesystem access beyond declared endpoints.
+- **Human-in-the-Loop Gating:** Clients can inspect tool call requests and gate destructive actions behind human approval workflows prior to server execution.
+
+## Day 12 — Building MCP Servers with FastMCP (Database Tool Integration)
+
+### 1. FastMCP vs. Low-Level MCP SDK
+- **Low-Level SDK (`mcp.server.Server`):** Requires manual registration of JSON-RPC handlers, hand-crafted JSON Schema dictionaries for arguments, and low-level asynchronous stream management.
+- **FastMCP Framework (`mcp.server.fastmcp.FastMCP`):** A high-level, FastAPI-inspired abstraction that:
+  - Auto-derives JSON Schema validation from Python type hints and default values.
+  - Automatically extracts tool docstrings as the model-facing descriptions.
+  - Auto-registers `tools/list` and `tools/call` handlers without boilerplate.
+  - Starts the server with a single command: `mcp.run(transport="stdio")`.
+
+### 2. Docstrings as Primary Prompt Engineering Surface
+- **Interface Specification:** In MCP, docstrings serve as the prompt surface that LLMs analyze to determine tool relevance and parameter formatting.
+- **Required Elements:** Effective tool docstrings must clearly state:
+  - Exact operational capability and scope.
+  - Hard constraints (e.g., *"read-only"*, *"case-sensitive format: ORD-XXXX"*).
+  - Parameter meanings, formats, and defaults.
+  - Return structure and expected error scenarios.
+- **Failure Mode:** Inaccurate or vague docstrings lead to tool selection errors, incorrect argument types, or hallucinated parameter inputs.
+
+### 3. Structural Evolution: In-Process Tools vs. Standalone MCP Server
+- **In-Process Tools (Day 10):** Tool functions execute in the same runtime memory space as the LangGraph agent, tightly coupling business logic to a single agent implementation.
+- **Standalone MCP Server (Day 12):** Tool logic runs in an independent server process. The same database tools can be consumed simultaneously by LangGraph agents, Claude Desktop, Cursor, and custom CLI tools without duplicating access logic.
+
+### 4. Production Hardening for DB-Backed MCP Servers
+- **Engine-Level Read-Only Enforcement:**
+  - Application layer: Validate SQL at the token or AST level to block destructive statements (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`, `MERGE`, `EXEC`).
+  - Database layer: Connect via a dedicated database user restricted strictly to `SELECT` permissions at the engine level.
+- **Bounded Output & Context Protection:**
+  - Unconstrained queries (`SELECT *`) risk overflowing the LLM context window.
+  - Enforce a hard row limit (e.g., 50–200 rows) and return structured truncation metadata (`{"truncated": true, "count": 50, "warning": "..."}`) so the agent knows to narrow its query.
+- **Connection Pooling & Lifecycle:**
+  - Maintain a managed database connection pool (e.g., SQLAlchemy or `psycopg_pool`) instead of opening per-call connections.
+  - Register clean process shutdown handlers to drain and close pools on server termination.
+- **Serialization Safety:**
+  - Database drivers return non-standard Python objects (`datetime`, `Decimal`, `UUID`) that fail default JSON encoding.
+  - Use `json.dumps(..., default=str)` or Pydantic serialization models to ensure clean JSON responses.
+
+### 5. Resilient Error Handling & The ReAct Self-Correction Loop
+- **Zero-Crash Invariant:** Tool execution failures (e.g., SQL syntax errors, missing columns, timeouts) must never crash the MCP server process.
+- **Structured Error Return:** Operational errors should be caught and returned as structured payload dictionaries (`{"error": "..."}`).
+- **Self-Correction Enablement:** Returning errors as structured observations allows the LLM within a ReAct loop to inspect the error, adjust parameters or SQL queries, and retry without terminating the agent execution.
+
+### 6. Architectural Tradeoffs: In-Process vs. MCP vs. REST+OpenAPI
+| Approach | Pros | Cons | Ideal Use Case |
+|---|---|---|---|
+| **In-Process Tools** (`@tool`) | Simple setup, single codebase, zero transport overhead | Tightly coupled, non-reusable outside the host agent | Single-agent prototypes & self-contained apps |
+| **MCP Server** (`FastMCP`) | Standardized, language-agnostic, multi-client support, process isolation | Transport/serialization overhead, separate process lifecycle | Shared enterprise tool platforms & multi-agent systems |
+| **REST + OpenAPI** | Universally supported across web ecosystems | Requires custom client wrappers; lacks native agent primitives (Resources/Prompts) | Traditional web microservices & human-facing APIs |
