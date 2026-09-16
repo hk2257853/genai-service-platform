@@ -17,9 +17,17 @@
   - Dynamically discovers tools via `tools/list` without hardcoded schemas.
   - Multi-turn conversation state persistence with `MemorySaver` checkpointer.
   - Demonstrated coreference resolution and structured error recovery over real mock data (`scripts/demo_mcp_agent.py` and `ai_service_platform/tests/test_mcp_agent.py`).
+- **Day 13.1 (Agent Harness Engineering & Autonomous Operating Systems):**
+  - Established the 3 core pillars of a production harness: Context Anchors (`AGENTS.md` & `PROJECT_STATE.md`), Deterministic Rules (`rules/`), and Modular On-Demand Skills (`skills/*/SKILL.md`).
+  - Implemented closed-loop verification protocols: task completion requires executed proof (`0` exit code) rather than open-loop text generation.
+  - Codified token economics and lazy skill loading patterns in `NOTES.md`.
+- **Day 14 (Agent vs. RAG, Anti-Patterns):**
+  - Formulated rigorous Agent vs. RAG architectural comparison matrix and the 5-level AI autonomy spectrum.
+  - Codified the 6 production anti-patterns where agents should NOT be used (deterministic logic, strict SLAs, cost-sensitive endpoints, unbounded mutations, exact calculations, simple search).
+  - Codified the core architectural tradeoffs and decision rules in `NOTES.md`.
 
-## 3. Next Goal: Day 14
-- **Objective:** Revise full flow, Agent vs RAG (when to use which), When NOT to use agents.
+## 3. Next Goal: Day 15
+- **Objective:** Evals — RAGAS (faithfulness, answer relevancy, contextual precision), simple assertions for agents, LLM-as-judge (score output quality & compare prompt/retrieval changes).
 
 ## 4. Known Gotchas
 - **MCP stdout/stderr:** All logging in MCP servers MUST go to `stderr`. Any `print()` or stdout logging will corrupt the JSON-RPC stream.

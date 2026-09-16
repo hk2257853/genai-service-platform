@@ -32,7 +32,8 @@ Day 10 — Add tools: check_order_status + get_product_info, Memory (short-term 
 Day 11 — MCP basics, Tools vs resources vs prompts, Why it matters (standardized tool access)
 Day 12 — Build simple MCP server (FastMCP), Expose orders DB as tools
 Day 13 — Connect LangGraph agent → MCP server, Multi-turn agent with real data
-Day 14 — Revise full flow, Agent vs RAG (when to use which), When NOT to use agents
+Day 13.1 — Agent Harness Engineering & Autonomous Operating Systems (Pillars, closed-loop verification, token economics)
+Day 14 — Agent vs RAG (when to use which), When NOT to use agents
 
 ## New Fundamental Concepts (extracted from Weeks 3–4)
 *These are genuinely new AI-specific concepts — not just applications of Week 1+2 skills. Learn these before building the production project so you're interview-ready on all core topics.*

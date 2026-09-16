@@ -1,10 +1,22 @@
 # Verification & State Handoff Rules
 
-## 1. The Verification Loop Invariant
+## 1. The Planning, Verification & Delegation Invariants
+
+### A. Start-of-Day Planning & Mandatory Human Approval
+- When beginning a new day or task (e.g., *"Let's begin with Day X: [task]"*):
+  1. **Brainstorm:** Brainstorm thoroughly how to execute the task cleanly, analyzing architecture, libraries, and edge cases.
+  2. **Implementation Plan:** Produce a clear, structured implementation plan (`implementation_plan.md`).
+  3. **Mandatory Review & Approval Gate:** Do not begin implementation autonomously. Present the plan and wait for the user to review and explicitly approve it before writing code.
+
+### B. Sub-Agent Delegation (Strict Independence Only)
+- During analysis or implementation, launch sub-agents to execute tasks in parallel **only if the parts are completely independent** (disjoint files, independent logic, no shared state or sequencing dependencies).
+- **Prohibition on Overlapping Sub-Agents:** If tasks overlap, edit the same files, or depend on one another, do NOT use sub-agents. Execute sequentially to prevent concurrency conflicts and state corruption.
+
+### C. The Verification Loop Invariant
 - **Never claim a task or milestone is complete without executing a verification run.**
 - Follow the deterministic workflow:
   ```
-  Plan → Implement → Build/Import Check → Execute Tests/Verification & Inspect Logs → Document Walkthrough with Test Logs → Inspect Diff → Update Handoff
+  Brainstorm → Plan → User Approval → Implement (Independent Sub-Agents if applicable) → Build/Import Check → Execute Tests/Verification & Inspect Logs → Document Walkthrough with Test Logs → Inspect Diff → Update Handoff
   ```
 
 ## 2. The "Definition of Done" Checklist

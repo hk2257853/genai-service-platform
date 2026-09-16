@@ -24,3 +24,15 @@
   - Print the output result / response / state after execution (e.g. `print(f"[TEST OUTPUT] ...")`).
 - **Test vs. Server Logging:** While server-side code (such as FastMCP over STDIO) must never use `print()` on stdout, test suites and demo scripts explicitly require print statements to give human developers instant visibility into data flow.
 - **Post-Development Verification:** Every newly written or modified test must be executed immediately post-development to verify it runs properly and passes cleanly.
+
+## 5. Notes & Knowledge Base Standards (NOTES.md)
+- **High Technical Depth (No Arbitrary Caps):** Never artificially truncate or omit complex mechanisms, failure modes, formulas, or system architectures. If a topic requires deep technical breakdown, provide it fully.
+- **Single Best Vehicle (Zero Format Echoing):** Never repeat the exact same information across multiple consecutive formats. Pick the single best representation for an idea:
+  - If bullet points explain tradeoffs clearly, do not repeat them in a table below.
+  - If a comparison table is the cleanest vehicle, do not duplicate its rows in narrative text above or below.
+  - Use diagrams to visualize flows or relationships that text cannot convey easily, not to duplicate written lists.
+- **Natural Textbook Voice:** Write in the tone of an authoritative engineering textbook or internal system design doc. Never use conversational filler or meta-framing (e.g. avoid *"Cheat Sheet"*, *"Interview Tips"*, or *"Rapid-Fire Q&A"*).
+- **Uniform Anatomy:** Keep the visual structure consistent with earlier days:
+  - Use bold keyword anchors: `- **Mechanism:** ...`, `- **Tradeoff:** ...`, `- **Gotcha:** ...`
+  - Use inline code formatting for symbols, classes, files, status codes, and configuration keys.
+

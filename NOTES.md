@@ -63,13 +63,16 @@
   - [4. Multi-Turn Continuity & Coreference Resolution over Real Data](#4-multi-turn-continuity--coreference-resolution-over-real-data)
   - [5. Resilient Self-Correction in ReAct Loops](#5-resilient-self-correction-in-react-loops)
   - [6. Provider Quota & Rate Limit Resiliency (Production Gotcha)](#6-provider-quota--rate-limit-resiliency-production-gotcha)
-- [Day 14 / Architecture — Agent Harness Engineering & Autonomous Operating Systems](#day-14--architecture--agent-harness-engineering--autonomous-operating-systems)
+- [Day 13.1 — Agent Harness Engineering & Autonomous Operating Systems](#day-131--agent-harness-engineering--autonomous-operating-systems)
   - [1. The Paradigm Shift: Prompt Engineering vs. Harness Engineering](#1-the-paradigm-shift-prompt-engineering-vs-harness-engineering)
   - [2. The 3 Core Pillars of a Production Agent Harness](#2-the-3-core-pillars-of-a-production-agent-harness)
   - [3. Closed-Loop Verification vs. Open-Loop Generation](#3-closed-loop-verification-vs-open-loop-generation)
   - [4. Modular On-Demand Skills & Token Economics](#4-modular-on-demand-skills--token-economics)
   - [5. Architectural Tradeoffs: Prompting vs. Static Prompts vs. Harness](#5-architectural-tradeoffs-prompting-vs-static-prompts-vs-harness)
   - [6. Production Invariants & Engineering Takeaways](#6-production-invariants--engineering-takeaways)
+- [Day 14 — Agent vs. RAG (When to Use Which), When NOT to Use Agents](#day-14--agent-vs-rag-when-to-use-which-when-not-to-use-agents)
+  - [1. Agent vs. RAG (When to Use Which)](#1-agent-vs-rag-when-to-use-which)
+  - [2. When NOT to Use Agents (Production Invariants)](#2-when-not-to-use-agents-production-invariants)
 
 ---
 
@@ -618,7 +621,7 @@ flowchart TD
 
 ---
 
-## Day 14 / Architecture — Agent Harness Engineering & Autonomous Operating Systems
+## Day 13.1 — Agent Harness Engineering & Autonomous Operating Systems
 
 ### 1. The Paradigm Shift: Prompt Engineering vs. Harness Engineering
 - **Prompt Engineering (Fragile & Ephemeral):** Relies on crafting long, narrative system prompts to coax an LLM into behaving properly. Suffers from:
@@ -697,5 +700,34 @@ flowchart TD
 2. **Never Trust Unverified Code:** A task is not done when the LLM finishes typing; it is done when the test runner exits with code `0`.
 3. **Keep Rules Focused & Independent:** Rules should be non-overlapping and modular so they can evolve with the codebase without causing conflicting directives.
 4. **Harness as Code:** By storing `.agents/` in version control, agent behavior, coding standards, and project context are shared and reproduced across the entire engineering team.
+
+---
+
+## Day 14 — Agent vs. RAG (When to Use Which), When NOT to Use Agents
+
+### 1. Agent vs. RAG (When to Use Which)
+
+- **RAG (Passive Grounding):** A deterministic, linear pipeline ($A \rightarrow B \rightarrow C$). Retrieves static or slowly changing text, injects it into context, and generates a grounded answer. Stateless per query, predictable sub-second latency (200–800ms), bounded $O(1)$ token cost, zero mutation side effects.
+  - *Best for:* Documentation search, internal policies, compliance Q&A, and customer FAQs.
+- **Agent (Active Execution):** A dynamic cyclic state machine ($A \leftrightarrow B$). Evaluates intermediate tool outputs, self-corrects on failures, loops until a goal is met, and maintains conversational state across turns. Incurs variable latency (2–15s) and compounding token cost ($O(N^2)$ across long threads).
+  - *Best for:* Dynamic tool orchestration, database mutations (order cancellations, refunds), and open-ended workflows where the execution path cannot be known ahead of time.
+
+---
+
+### 2. When NOT to Use Agents (Production Invariants)
+
+Deploying agents where standard software belongs introduces non-determinism, latency, and cost vulnerabilities:
+
+1. **Deterministic Business Logic:** If steps follow rigid business rules (e.g. return window policy), write standard Python or use workflow engines (Temporal/Airflow). Never delegate deterministic rules to a probabilistic model.
+2. **Strict Latency SLAs (< 1s):** Multi-hop reasoning loops require multiple LLM roundtrips and tool executions, easily exceeding gateway timeouts. Use cached hybrid search or indexed databases instead.
+3. **High-Throughput / Cost-Sensitive Endpoints:** Multi-turn agents resend prior history and tool payloads, scaling token consumption $O(N^2)$. Use single-shot structured outputs or fine-tuned small models.
+4. **Unbounded High-Stakes Mutations:** Never give an autonomous agent un-gated tool access to financial transfers or database deletions. Enforce deterministic policy thresholds and Human-in-the-Loop (`interrupt()`) gating.
+5. **Exact Arithmetic & Math:** LLMs predict tokens; they do not calculate. Offload math, tax computations, and balance checks to deterministic code/SQL tools.
+6. **Simple Document Lookup:** Never wrap a search tool in an agent loop just to decide to call `search_docs()`. Run a direct hybrid RAG pipeline.
+
+- **Core Engineering Rule:**  
+  > *"Use LLMs for fuzzy text understanding; use deterministic code for business control. If your execution graph has no cycles, it is a pipeline, not an agent."*
+
+
 
 

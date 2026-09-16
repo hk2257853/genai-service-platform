@@ -74,12 +74,14 @@ Create `.agents/AGENTS.md` to establish workspace-level invariants:
 ## Core Invariants
 1. **Framework-First, Always:** Never hand-roll custom versions where mature, industry-standard libraries exist.
 2. **Lean Context & Memory Handoff:** Always consult `.agents/PROJECT_STATE.md` for current architecture and active milestones instead of speculatively re-reading past files.
-3. **Observable Tests:** Every test written must include clear print statements stating the input going in and the output received after execution.
-4. **Post-Development Verification:** Never claim a feature or milestone is complete without immediately running the test(s) (e.g. `pytest -s`) to inspect stdout/stderr and verify clean exit code `0`.
-5. **Walkthrough Test Results & Logs:** Always paste full test results along with all printed logs at the bottom of the walkthrough.
-6. **No Autonomous Commits:** Never execute `git commit` without explicit approval. Present the proposed commit message write-up in chat and wait for user confirmation.
-7. **Incremental Notes:** Record takeaways, trade-offs, and gotchas in `NOTES.md` at the end of each session.
-8. **First Action:** At the start of every session, read `.agents/PROJECT_STATE.md` before doing anything else.
+3. **Start-of-Day Workflow (Brainstorm → Plan → Approve):** When given a new day/task, brainstorm the approach and generate `implementation_plan.md`. Never implement autonomously; wait for user approval in chat.
+4. **Sub-Agent Delegation (Strict Independence Only):** Launch sub-agents to parallelize work only for completely independent parts. If tasks overlap or touch shared files, execute sequentially.
+5. **Observable Tests:** Every test written must include clear print statements stating the input going in and the output received after execution.
+6. **Post-Development Verification:** Never claim a feature or milestone is complete without immediately running the test(s) (e.g. `pytest -s`) to inspect stdout/stderr and verify clean exit code `0`.
+7. **Walkthrough Test Results & Logs:** Always paste full test results along with all printed logs at the bottom of the walkthrough.
+8. **No Autonomous Commits:** Never execute `git commit` without explicit approval. Present the proposed commit message write-up in chat and wait for user confirmation.
+9. **Incremental Notes:** Record takeaways, trade-offs, and gotchas in `NOTES.md` at the end of each session.
+10. **First Action:** At the start of every session, read `.agents/PROJECT_STATE.md` before doing anything else.
 ```
 
 ---
@@ -124,14 +126,16 @@ description: <Explicit trigger condition explaining WHEN the agent should read t
 ## 3. The Daily Operating Rhythm (How to Work)
 
 1. **Start of Session (New Chat):**
-   - Do **not** paste large prompts or ask the AI to inspect the entire repo.
    - Prompt:
-     > *"Starting [Milestone/Day X]. Refer to @.agents/PROJECT_STATE.md. Formulate the plan to implement [Goal]."*
-   - Initial token burn drops from ~30,000 to **< 500 tokens**.
+     > *"Let's begin with Day X: [one-line task description]."*
+   - **Step 1 (Brainstorm & Plan):** The agent brainstorms how to execute the task cleanly and formulates a structured `implementation_plan.md`.
+   - **Step 2 (Mandatory Review Gate):** The agent stops and waits for explicit user review and approval in chat. It must **never** execute the implementation autonomously.
 
 2. **During Implementation:**
-   - The agent writes the code and executes verification commands directly in terminal.
-   - It checks against the "Definition of Done".
+   - Once the plan is approved, proceed into implementation.
+   - **Sub-Agent Delegation (Strict Independence Only):** If parts of analysis or implementation are completely independent (disjoint files, no shared state), launch sub-agents to execute in parallel and accelerate delivery. If tasks overlap or touch shared files, execute sequentially in the main thread to prevent collisions.
+   - Write observable tests with input and output print statements and execute verification commands in terminal (`pytest -v -s`).
+   - Satisfy all items in the "Definition of Done".
 
 3. **End of Session (Wrap-Up):**
    - Prompt:
