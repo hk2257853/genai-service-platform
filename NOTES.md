@@ -42,6 +42,34 @@
   - [5. Human-in-the-Loop (HITL) & State Persistence Design](#5-human-in-the-loop-hitl--state-persistence-design)
   - [6. Production Guardrails, Safety Patterns & Idempotency](#6-production-guardrails-safety-patterns--idempotency)
   - [7. Real-World Execution Scenarios Reference](#7-real-world-execution-scenarios-reference)
+- [Day 11 — Model Context Protocol (MCP) Fundamentals & Architecture](#day-11--model-context-protocol-mcp-fundamentals--architecture)
+  - [1. Core Motivation: The M×N Integration Bottleneck](#1-core-motivation-the-mn-integration-bottleneck)
+  - [2. MCP Primitives: Tools, Resources, and Prompts](#2-mcp-primitives-tools-resources-and-prompts)
+  - [3. Protocol Specification & Lifecycle](#3-protocol-specification--lifecycle)
+  - [4. Client-Server Negotiation Mechanics](#4-client-server-negotiation-mechanics)
+  - [5. Transport Layers: STDIO vs. SSE/HTTP](#5-transport-layers-stdio-vs-ssehttp)
+  - [6. Security Model & Execution Boundaries](#6-security-model--execution-boundaries)
+- [Day 12 — Building MCP Servers with FastMCP (Database Tool Integration)](#day-12--building-mcp-servers-with-fastmcp-database-tool-integration)
+  - [1. FastMCP vs. Low-Level MCP SDK](#1-fastmcp-vs-low-level-mcp-sdk)
+  - [2. Docstrings as Primary Prompt Engineering Surface](#2-docstrings-as-primary-prompt-engineering-surface)
+  - [3. Structural Evolution: In-Process Tools vs. Standalone MCP Server](#3-structural-evolution-in-process-tools-vs-standalone-mcp-server)
+  - [4. Production Hardening for DB-Backed MCP Servers](#4-production-hardening-for-db-backed-mcp-servers)
+  - [5. Resilient Error Handling & The ReAct Self-Correction Loop](#5-resilient-error-handling--the-react-self-correction-loop)
+  - [6. Architectural Tradeoffs: In-Process vs. MCP vs. REST+OpenAPI](#6-architectural-tradeoffs-in-process-vs-mcp-vs-restopenapi)
+- [Day 13 — Connecting LangGraph Agent to MCP Server (Multi-Turn Real Data)](#day-13--connecting-langgraph-agent-to-mcp-server-multi-turn-real-data)
+  - [1. The Paradigm Shift: In-Process vs. Protocol-Driven Dynamic Tools](#1-the-paradigm-shift-in-process-vs-protocol-driven-dynamic-tools)
+  - [2. Mechanics of `langchain-mcp-adapters` & `MultiServerMCPClient`](#2-mechanics-of-langchain-mcp-adapters--multiservermcpclient)
+  - [3. Subprocess Isolation & STDIO Transport Invariants](#3-subprocess-isolation--stdio-transport-invariants)
+  - [4. Multi-Turn Continuity & Coreference Resolution over Real Data](#4-multi-turn-continuity--coreference-resolution-over-real-data)
+  - [5. Resilient Self-Correction in ReAct Loops](#5-resilient-self-correction-in-react-loops)
+  - [6. Provider Quota & Rate Limit Resiliency (Production Gotcha)](#6-provider-quota--rate-limit-resiliency-production-gotcha)
+- [Day 14 / Architecture — Agent Harness Engineering & Autonomous Operating Systems](#day-14--architecture--agent-harness-engineering--autonomous-operating-systems)
+  - [1. The Paradigm Shift: Prompt Engineering vs. Harness Engineering](#1-the-paradigm-shift-prompt-engineering-vs-harness-engineering)
+  - [2. The 3 Core Pillars of a Production Agent Harness](#2-the-3-core-pillars-of-a-production-agent-harness)
+  - [3. Closed-Loop Verification vs. Open-Loop Generation](#3-closed-loop-verification-vs-open-loop-generation)
+  - [4. Modular On-Demand Skills & Token Economics](#4-modular-on-demand-skills--token-economics)
+  - [5. Architectural Tradeoffs: Prompting vs. Static Prompts vs. Harness](#5-architectural-tradeoffs-prompting-vs-static-prompts-vs-harness)
+  - [6. Production Invariants & Engineering Takeaways](#6-production-invariants--engineering-takeaways)
 
 ---
 
@@ -548,4 +576,126 @@ flowchart TD
 |---|---|---|---|
 | **In-Process Tools** (`@tool`) | Simple setup, single codebase, zero transport overhead | Tightly coupled, non-reusable outside the host agent | Single-agent prototypes & self-contained apps |
 | **MCP Server** (`FastMCP`) | Standardized, language-agnostic, multi-client support, process isolation | Transport/serialization overhead, separate process lifecycle | Shared enterprise tool platforms & multi-agent systems |
-| **REST + OpenAPI** | Universally supported across web ecosystems | Requires custom client wrappers; lacks native agent primitives (Resources/Prompts) | Traditional web microservices & human-facing APIs |
+| **REST + OpenAPI** | Universally supported across web ecosystems | Requires custom client wrappers; lacks native agent primitives (Resources/Prompts) | Traditional web microservices & human-facing APIs |
+
+---
+
+## Day 13 — Connecting LangGraph Agent to MCP Server (Multi-Turn Real Data)
+
+### 1. The Paradigm Shift: In-Process vs. Protocol-Driven Dynamic Tools
+- **In-Process Tools (Day 10):** The agent manually registers python functions using `@tool` and hand-crafted dictionary schemas (`TOOLS_SPEC`). Adding or modifying a tool requires changing the agent codebase and redeploying the orchestrator.
+- **Protocol-Driven Dynamic Tools (Day 13):** The agent starts with **zero** hardcoded tool specifications. At runtime initialization, it queries the MCP server via `tools/list` over JSON-RPC 2.0. The adapter converts these specifications dynamically into LangChain `BaseTool` objects and LiteLLM function calling specs.
+- **Benefits:** Decouples tool evolution from agent orchestration. Microservice teams can add, alter, or retire tools on the MCP server without touching or redeploying the agent.
+
+### 2. Mechanics of `langchain-mcp-adapters` & `MultiServerMCPClient`
+- **Architecture:** `MultiServerMCPClient` manages one or more MCP server connections across heterogeneous transports (STDIO, SSE).
+- **Tool Conversion:** Each tool exposed by the MCP server is wrapped into an `MCPTool` (a subclass of LangChain's `BaseTool`). Invoking `tool.ainvoke(args)` transparently dispatches a JSON-RPC `tools/call` over the active transport channel and awaits the response.
+- **Schema Mapping:** Tools are easily converted into standard LLM function schemas using `convert_to_openai_tool(tool)`, extracting the parameter schemas directly from the MCP server's negotiated capabilities.
+
+### 3. Subprocess Isolation & STDIO Transport Invariants
+- **Process Boundaries:** Under the STDIO transport, the client spawns the MCP server as an isolated OS subprocess (`python -m ecommerce_server`).
+- **Transport Strictness:** Communication occurs strictly over standard streams:
+  - `stdin`: Client sends JSON-RPC requests (`initialize`, `tools/list`, `tools/call`).
+  - `stdout`: Server returns JSON-RPC responses.
+  - `stderr`: Server logs diagnostic and error messages.
+- **Critical Failure Mode:** Any uncaptured `print()` or stdout emission in the server will inject arbitrary non-JSON text into the stream, causing the client JSON parser to crash.
+
+### 4. Multi-Turn Continuity & Coreference Resolution over Real Data
+- **State Checkpointing:** By configuring the LangGraph `StateGraph` with a checkpointer (`MemorySaver`), conversation state is indexed by `thread_id`.
+- **Multi-Turn Pattern:**
+  1. *Turn 1 (Entity Inquiry):* User asks for order `ORD-1001`. Agent invokes `get_order_details` via MCP, receiving items (`Sony WH-1000XM5`, `PROD-101`).
+  2. *Turn 2 (Coreference Follow-Up):* User asks *"Is that product still in stock and what warranty does it have?"*. The LLM's attention mechanism resolves *"that product"* from Turn 1's tool observation in context, issuing an MCP call to `get_product_details(product_id_or_name="PROD-101")` without asking the user to repeat the SKU.
+- **Token Growth:** Context grows with each turn ($O(N)$ prompt tokens per turn). In production, pruning older tool payloads or trimming history is vital.
+
+### 5. Resilient Self-Correction in ReAct Loops
+- **Tool Error Handling:** If a user requests a nonexistent ID (`ORD-9999`), the MCP tool catches the lookup failure and returns a structured payload: `{"error": "Order 'ORD-9999' not found", "available_order_ids": [...]}`.
+- **Agent Recovery:** The LLM receives this structured message in its `ToolMessage`. Rather than failing or hallucinating, it synthesizes a helpful response explaining that the order was not found and suggests valid alternatives.
+
+### 6. Provider Quota & Rate Limit Resiliency (Production Gotcha)
+- **Problem:** Fast agent loops (Agent $\rightarrow$ Tool $\rightarrow$ Agent) can easily exceed free-tier request-per-minute (RPM) or requests-per-day (RPD) limits (e.g. 5 RPM on free tiers).
+- **LiteLLM Exception Wrapping Gotcha:** Some provider SDKs wrap 429 quota exhaustion errors inside generic `BadRequestError` exceptions instead of `RateLimitError`.
+- **Solution:** Domain client adapters must inspect both error types and status codes (`429`, `"RESOURCE_EXHAUSTED"`, `"quota"`), translating them to `LLMRateLimitError` to allow libraries like `tenacity` to execute exponential backoffs rather than aborting the agent execution.
+
+---
+
+## Day 14 / Architecture — Agent Harness Engineering & Autonomous Operating Systems
+
+### 1. The Paradigm Shift: Prompt Engineering vs. Harness Engineering
+- **Prompt Engineering (Fragile & Ephemeral):** Relies on crafting long, narrative system prompts to coax an LLM into behaving properly. Suffers from:
+  - *Context Drift:* Instructions dilute and lose priority over multi-turn interactions ($O(N)$ token degradation).
+  - *Zero Enforcement:* The model can acknowledge a rule and still violate it on the next turn.
+  - *High Cognitive Overhead:* The developer must repeatedly re-prompt and babysit the model.
+- **Harness Engineering (Robust & Deterministic):** Builds a deterministic software environment around the foundation model to govern behavior, enforce quality invariants, and ground execution in real toolchains.
+  - The model does not operate in a vacuum; it operates inside an **operating harness** consisting of context anchors, static behavioral guardrails, closed feedback loops, and on-demand capability playbooks.
+
+```mermaid
+flowchart TD
+    subgraph Prompt Engineering [Fragile: Prompt Engineering]
+        U1[User Prompt] --> LLM1[LLM in Vacuum]
+        LLM1 --> Out1[Open-Loop Code Generation]
+        Out1 --> Err1[Silent Regressions / Drift]
+    end
+
+    subgraph Harness Engineering [Robust: Harness Engineering]
+        U2[Goal / Task] --> Harness[Agent Harness Environment]
+        Harness --> Context[1. Context Anchors: AGENTS.md & STATE.md]
+        Harness --> Rules[2. Active Rules: standards & verification]
+        Harness --> Skills[3. Modular Skills: TDD, Debug, Git]
+        Context & Rules & Skills --> Agent[Autonomous Execution Loop]
+        Agent --> Tool[Tool / Subprocess Execution]
+        Tool --> Observe[Closed-Loop Verification]
+        Observe -- Failure --> Agent
+        Observe -- Success --> Done[Deterministic Result]
+    end
+```
+
+### 2. The 3 Core Pillars of a Production Agent Harness
+
+#### Pillar 1: Context Anchors & Behavioral Orientation (`AGENTS.md` & `PROJECT_STATE.md`)
+- **Root `AGENTS.md`:** Establishes immutable operating boundaries, architectural role definitions (e.g. Architect vs. Implementer), and package boundary rules. It is permanently active across all conversation turns.
+- **`PROJECT_STATE.md`:** Maintains persistent state across isolated agent sessions. Tracks active milestone status, architectural decisions, and current focus so new agent turns require zero re-briefing.
+
+#### Pillar 2: Guardrails & Deterministic Rules (`rules/`)
+- **`engineering-standards.md`:** Codifies strict backend conventions (Pydantic payload validation, async database pooling, explicit type annotations, layered architecture boundaries).
+- **`verification-loop.md`:** Enforces the closed-loop rule: no code change is declared complete without executed proof (unit test pass, minimal reproduction script, or CLI validation).
+
+#### Pillar 3: Modular On-Demand Skills (`skills/*/SKILL.md`)
+- **Dynamic Playbooks:** Instead of bloating the root system prompt with hundreds of instructions, specialized workflows are encapsulated into isolated skills with YAML frontmatter metadata.
+- **Key Harness Skills in this Repo:**
+  1. `tdd-workflow`: Enforces Red-Green-Refactor test-first development.
+  2. `debugging`: Enforces 3-phase triage (Failure Categorization $\rightarrow$ Minimal Isolated Repro $\rightarrow$ Fix & Re-verify).
+  3. `git-commit`: Enforces repository-specific semantic commit message conventions matching actual git history.
+  4. `project-harness-setup`: Scaffolds standard harness structures for new workspaces.
+
+### 3. Closed-Loop Verification vs. Open-Loop Generation
+- **Open-Loop Generation (AI as a Typist):**
+  - Model generates code $\rightarrow$ pastes into response $\rightarrow$ human copies it $\rightarrow$ code fails at runtime $\rightarrow$ human pastes back error.
+  - Feedback latency is high; human acts as the compiler/runtime.
+- **Closed-Loop Verification (AI as an Autonomous Engineer):**
+  - Model generates code $\rightarrow$ executes test suite or isolated reproduction script in a sandboxed subprocess $\rightarrow$ inspects real `stdout`/`stderr` $\rightarrow$ self-corrects on failure $\rightarrow$ verifies green status before notifying human.
+  - Eliminates syntax errors, missing imports, and broken assumptions prior to human review.
+
+### 4. Modular On-Demand Skills & Token Economics
+- **Token Optimization:** Keeping all workflow guides (TDD, Debugging, Deployment, Git) in the system prompt wastes thousands of prompt tokens per turn and causes **attention dilution**.
+- **Skill Discovery Pattern:**
+  1. The agent harness exposes skill names and descriptions in lightweight metadata (~50 tokens total).
+  2. When the user requests a specific task (or an error occurs), the agent performs **lazy loading** of the relevant `SKILL.md`.
+  3. Full detailed instructions are loaded into context only during the duration of that task.
+
+### 5. Architectural Tradeoffs: Prompting vs. Static Prompts vs. Harness
+
+| Dimension | Ad-Hoc Prompting | Monolithic System Prompt | Modular Agent Harness (`.agents/`) |
+|---|---|---|---|
+| **Context Overhead** | Low (0 tokens) | Extremely High (2k–10k tokens/turn) | Minimal (Lazy-loaded on demand) |
+| **Consistency** | Very Low (depends on user phrasing) | Medium (drifts over long turns) | Deterministic (Enforced at workspace level) |
+| **Verification** | Manual (Human tests) | Manual / Requested | Automated (Closed-loop via `verification-loop.md`) |
+| **Code Quality** | Unpredictable | Inconsistent | Strictly typed & layered (`engineering-standards.md`) |
+| **Maintenance** | None | Difficult (single giant string) | Clean (Modular markdown files in git) |
+
+### 6. Production Invariants & Engineering Takeaways
+1. **The Environment Shapes the Output:** The quality of an AI agent's code is a direct function of the constraints and feedback loops in its environment, not prompt verbosity.
+2. **Never Trust Unverified Code:** A task is not done when the LLM finishes typing; it is done when the test runner exits with code `0`.
+3. **Keep Rules Focused & Independent:** Rules should be non-overlapping and modular so they can evolve with the codebase without causing conflicting directives.
+4. **Harness as Code:** By storing `.agents/` in version control, agent behavior, coding standards, and project context are shared and reproduced across the entire engineering team.
+
+

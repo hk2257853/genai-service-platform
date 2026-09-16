@@ -74,9 +74,12 @@ Create `.agents/AGENTS.md` to establish workspace-level invariants:
 ## Core Invariants
 1. **Framework-First, Always:** Never hand-roll custom versions where mature, industry-standard libraries exist.
 2. **Lean Context & Memory Handoff:** Always consult `.agents/PROJECT_STATE.md` for current architecture and active milestones instead of speculatively re-reading past files.
-3. **Verification Before Completion:** Never claim a feature or milestone is complete without executing a test/verification command to inspect stdout/stderr.
-4. **Incremental Notes:** Record takeaways, trade-offs, and gotchas in `NOTES.md` at the end of each session.
-5. **First Action:** At the start of every session, read `.agents/PROJECT_STATE.md` before doing anything else.
+3. **Observable Tests:** Every test written must include clear print statements stating the input going in and the output received after execution.
+4. **Post-Development Verification:** Never claim a feature or milestone is complete without immediately running the test(s) (e.g. `pytest -s`) to inspect stdout/stderr and verify clean exit code `0`.
+5. **Walkthrough Test Results & Logs:** Always paste full test results along with all printed logs at the bottom of the walkthrough.
+6. **No Autonomous Commits:** Never execute `git commit` without explicit approval. Present the proposed commit message write-up in chat and wait for user confirmation.
+7. **Incremental Notes:** Record takeaways, trade-offs, and gotchas in `NOTES.md` at the end of each session.
+8. **First Action:** At the start of every session, read `.agents/PROJECT_STATE.md` before doing anything else.
 ```
 
 ---
@@ -90,11 +93,13 @@ Create two Markdown rules inside `.agents/rules/`:
    # Definition of Done Checklist
    Before declaring any feature complete:
    1. [ ] Imports & Syntax: No unresolved imports or build errors.
-   2. [ ] Deterministic Test: Verification command exits with code 0.
-   3. [ ] Channel Integrity: No rogue stdout logging corrupting protocol streams.
-   4. [ ] Git Diff Clean: No debug debris or accidental edits.
-   5. [ ] Notes Logged: Concepts and trade-offs added to `NOTES.md`.
-   6. [ ] State Handoff: `.agents/PROJECT_STATE.md` updated for the next session.
+   2. [ ] Observable Tests: Clear print statements showing input going in and output received.
+   3. [ ] Deterministic Test Execution: Verification command (`pytest -v -s`) exits with code 0.
+   4. [ ] Channel Integrity: No rogue stdout logging corrupting protocol streams.
+   5. [ ] Walkthrough Test Results: Full test output and printed logs pasted at bottom of walkthrough.
+   6. [ ] Git Diff Clean & Commit Approval: No debug debris; commit message write-up presented in chat for user confirmation.
+   7. [ ] Notes Logged: Concepts and trade-offs added to `NOTES.md`.
+   8. [ ] State Handoff: `.agents/PROJECT_STATE.md` updated for the next session.
    ```
 
 ---
@@ -131,4 +136,5 @@ description: <Explicit trigger condition explaining WHEN the agent should read t
 3. **End of Session (Wrap-Up):**
    - Prompt:
      > *"We are concluding this milestone. Please update NOTES.md with today's trade-offs and update .agents/PROJECT_STATE.md for the next session."*
-   - Commit all code and the updated `.agents/PROJECT_STATE.md` together in Git.
+   - Present the proposed Git commit message write-up in chat and request user confirmation.
+   - Once the user explicitly approves ("yes" / "proceed"), commit all code and the updated `.agents/PROJECT_STATE.md` together in Git.

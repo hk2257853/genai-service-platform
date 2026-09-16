@@ -1,11 +1,22 @@
 ---
 name: git-commit
-description: Guidelines and patterns for crafting high-quality Git commit messages matching this repository's established conventions. Use when preparing, reviewing, or generating git commit messages and PR descriptions.
+description: Guidelines and approval workflow for crafting high-quality Git commit messages matching this repository's established conventions. Use when preparing, reviewing, presenting commit messages for user approval, or generating git commit messages.
 ---
 
-# Git Commit Message Conventions
+# Git Commit Message Conventions & Approval Workflow
 
-This skill captures the established commit message conventions used across this repository. Follow these patterns when staging, committing, or summarizing work.
+This skill captures the established commit message conventions and approval requirements used across this repository. Follow these patterns when staging, preparing, reviewing, and committing work.
+
+---
+
+## Mandatory Human Approval Workflow (Zero Autonomous Commits)
+- **NEVER execute `git commit` autonomously.**
+- Even when explicitly asked to "commit the code" or wrap up:
+  1. Inspect status and diff (`git status`, `git diff`).
+  2. Draft the proposed commit message (type, scope, subject, bullet points) following the conventions below.
+  3. **Present the write-up / proposed commit message to the user in chat.**
+  4. Explicitly ask the user for confirmation (e.g. *"Here is the proposed commit message. May I proceed with the commit?"*).
+  5. **Wait for user confirmation.** Only if the user explicitly approves (says "yes", "proceed", etc.) do you execute the `git commit` command.
 
 ---
 

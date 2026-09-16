@@ -8,7 +8,8 @@ from litellm.exceptions import (
     APIConnectionError,
     ServiceUnavailableError,
     APIError,
-    Timeout
+    Timeout,
+    BadRequestError
 )
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -34,6 +35,13 @@ async def handle_litellm_exceptions_async(action_name: str):
     except RateLimitError as e:
         logger.warning("[%s] Rate limit exceeded. Details: %s", action_name, e)
         raise LLMRateLimitError(f"Rate limit exceeded during: {action_name}", e)
+    except BadRequestError as e:
+        err_str = str(e).lower()
+        if "429" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
+            logger.warning("[%s] Quota rate limit in BadRequestError: %s", action_name, e)
+            raise LLMRateLimitError(f"Rate limit exceeded during: {action_name}", e)
+        logger.error("[%s] Bad request: %s", action_name, e)
+        raise LLMException(f"Bad request during: {action_name}", e)
     except Timeout as e:
         logger.warning("[%s] Request timed out. Details: %s", action_name, e)
         raise LLMTimeoutError(f"Request timed out during: {action_name}", e)
@@ -51,7 +59,7 @@ async def handle_litellm_exceptions_async(action_name: str):
 class AsyncLLMClient:
     """Production-grade async client wrapping LiteLLM with robust retries and error mapping."""
 
-    def __init__(self, default_model: str, max_retries: int = 3):
+    def __init__(self, default_model: str, max_retries: int = 5):
         self.default_model = default_model
         self.max_retries = max_retries
 
@@ -66,7 +74,7 @@ class AsyncLLMClient:
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(self.max_retries),
-                wait=wait_exponential(multiplier=1, min=1, max=10),
+                wait=wait_exponential(multiplier=2, min=2, max=20),
                 retry=retry_if_exception_type((LLMRateLimitError, LLMConnectionError, LLMTimeoutError)),
                 reraise=True
             ):
