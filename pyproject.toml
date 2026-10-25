@@ -17,5 +17,7 @@ packages = [
     "ai_service_platform.agents",
     "ai_service_platform.data",
     "ai_service_platform.tests",
-    "ai_service_platform.tests.fixtures"
+    "ai_service_platform.tests.fixtures",
+    "ai_service_platform.evals",
+    "ai_service_platform.mcp_servers"
 ]

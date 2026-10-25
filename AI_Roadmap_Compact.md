@@ -39,8 +39,9 @@ Day 14 — Agent vs RAG (when to use which), When NOT to use agents
 *These are genuinely new AI-specific concepts — not just applications of Week 1+2 skills. Learn these before building the production project so you're interview-ready on all core topics.*
 
 Day 15 — Evals: RAGAS (faithfulness + answer relevancy + contextual precision), Simple assertions for agents, LLM-as-judge (use model to score output quality + compare prompt/retrieval changes)
-Day 16 — Observability + Tracing: LangSmith or structured logs, Cost + latency tracking per request, Token usage monitoring
-Day 17 — Production AI Patterns: Semantic + exact-match caching, Fallback model routing (LiteLLM router), Rate limiting + circuit breakers for LLM APIs
+TODO: Confirm day 16 and 17 plan with claude
+Day 16 — Observability + Tracing: *(Skip generic HTTP request-ID & JSON logging — already built in Java backend and this is a learning project as I know the concept, I can easily implement it in future when required)* → Only implement AI-specific observability: LangSmith or hierarchical agent DAG run-tree tracing, Time-to-First-Token (TTFT) on streaming responses, and per-call Token usage + USD cost monitoring
+Day 17 — Production AI Patterns: *(Skip generic Redis exact caching & IP-based RPM rate limiting — already built in Java backend)* → Only implement AI-specific patterns: Semantic caching (vector cosine similarity for intent reuse), Fallback cross-provider model routing (LiteLLM router: Gemini → Claude/GPT-4o mini), and Token-Per-Minute (TPM) / circuit breaker protections for LLM APIs
 Day 18 — AI System Design: RAG at scale, Vector DB choices (pgvector vs Pinecone vs Weaviate), LLM gateway (routing + cost control), Failure scenarios (timeouts + rate limits + model down)
 
 *After this point, all core concepts are covered. Everything below is applying Week 1–2 + above concepts + existing backend skills to build a production-grade portfolio project.*

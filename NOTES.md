@@ -728,6 +728,31 @@ Deploying agents where standard software belongs introduces non-determinism, lat
 - **Core Engineering Rule:**  
   > *"Use LLMs for fuzzy text understanding; use deterministic code for business control. If your execution graph has no cycles, it is a pipeline, not an agent."*
 
+---
 
+## Day 15 — Evals: RAGAS, Deterministic Agent Assertions, & LLM-as-a-Judge
 
-
+## What you're building
+
+A **test suite for an AI app**. Say you have a support bot that looks up policy docs and calls tools like `get_order_details`. You keep tweaking prompts and models, and every tweak could silently break something. With normal code you'd write unit tests, but AI answers differ on every run, so you need a different kind of test. That's all "evals" means.
+
+- **Input:** a test question, plus what the bot did (its answer, the docs it retrieved, the tools it called)
+- **Output:** pass/fail or a score
+- **Value:** you catch regressions before users do, and you compare versions with numbers instead of vibes
+
+## One example through all 3 layers
+
+You test: *"What's the refund window?"* The bot answers "90 days." The policy says 30.
+
+1. **Code checks:** did it call the right tools, stay under the step limit, and avoid leaking debug text? These are plain Python assertions. They're fast and free, but they can't tell that 90 is wrong.
+   - *Examples:* Output violated the expected schema/format/values, a malicious prompt was not flagged as a threat, or the agent got stuck in a loop (exceeding max iterations) or crashed midway.
+2. **RAG metrics:** why was it wrong? If the right policy doc was retrieved but the answer contradicts it, the *writing* is at fault. If the wrong doc was retrieved, the *search* is at fault. This tells you what to fix.
+3. **LLM judge:** a strong model grades things code can't check, like tone, helpfulness, and which of two prompts gives better answers.
+   - *Examples:* Pointwise rubric scoring (e.g., rating tone, empathy, and clarity from 1–5), pairwise A/B comparison (e.g., head-to-head Prompt A vs. Prompt B with double-swap to pick the winner), or catching semantic nuance (e.g., the answer is factually correct but overly abrupt, evasive, or misses critical caveats).
+
+You run cheap checks first and use the expensive judge only for what's left.
+
+## How it runs
+
+- **Before merging:** run ~200 curated test questions automatically on every change.
+- **In production:** sample a small slice of real chats and score them in the background.
