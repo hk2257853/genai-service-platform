@@ -70,9 +70,13 @@
   - [4. Modular On-Demand Skills & Token Economics](#4-modular-on-demand-skills--token-economics)
   - [5. Architectural Tradeoffs: Prompting vs. Static Prompts vs. Harness](#5-architectural-tradeoffs-prompting-vs-static-prompts-vs-harness)
   - [6. Production Invariants & Engineering Takeaways](#6-production-invariants--engineering-takeaways)
-- [Day 14 — Agent vs. RAG (When to Use Which), When NOT to Use Agents](#day-14--agent-vs-rag-when-to-use-which-when-not-to-use-agents)
-  - [1. Agent vs. RAG (When to Use Which)](#1-agent-vs-rag-when-to-use-which)
-  - [2. When NOT to Use Agents (Production Invariants)](#2-when-not-to-use-agents-production-invariants)
+- [Day 15 — Evals: RAGAS, Deterministic Agent Assertions, & LLM-as-a-Judge](#day-15--evals-ragas-deterministic-agent-assertions--llm-as-a-judge)
+- [Day 16 — Observability & Tracing: Run Trees, TTFT, and Token Economics](#day-16--observability--tracing-run-trees-ttft-and-token-economics)
+  - [1. The Fundamental Shift: Traditional APM vs. AI Observability](#1-the-fundamental-shift-traditional-apm-vs-ai-observability)
+  - [2. Pillar 1: Hierarchical Agent DAG Run Trees (LangSmith)](#2-pillar-1-hierarchical-agent-dag-run-trees-langsmith)
+  - [3. Pillar 2: Streaming Latency & Time-to-First-Token (TTFT)](#3-pillar-2-streaming-latency--time-to-first-token-ttft)
+  - [4. Pillar 3: Live Token Accounting & USD Cost Monitoring](#4-pillar-3-live-token-accounting--usd-cost-monitoring)
+  - [5. Architectural Invariants & Interview Recall](#5-architectural-invariants--interview-recall)
 
 ---
 
@@ -756,3 +760,102 @@ You run cheap checks first and use the expensive judge only for what's left.
 
 - **Before merging:** run ~200 curated test questions automatically on every change.
 - **In production:** sample a small slice of real chats and score them in the background.
+
+---
+
+## Day 16 — Observability & Tracing: Run Trees, TTFT, and Token Economics
+
+### 1. The Fundamental Shift: Traditional APM vs. AI Observability
+
+In standard enterprise microservices (e.g. Java/Spring Boot or FastAPI), observability is solved with standard APM tools (Datadog, Prometheus, OpenTelemetry). You log:
+```
+POST /api/v1/orders - 200 OK - duration: 42ms - trace_id: 8f4a1b
+```
+This paradigm fails completely for generative AI and autonomous agents for four reasons:
+
+1. **Non-Linear Execution & Hidden Work:** A single incoming user request triggers an autonomous agent DAG or multi-step RAG pipeline that may invoke 4 LLM reasoning loops, 3 tool calls, vector searches, and rerankers. A single flat HTTP log line tells you nothing about which internal hop failed or took 90% of the time.
+2. **Non-Deterministic Outputs:** HTTP status `200 OK` doesn't mean success. The model could have hallucinated, hallucinated tool arguments, or returned empty responses.
+3. **Compounding Financial Liability ($$$):** Standard backend calls cost essentially $0 in marginal compute. In AI, a single rogue conversation or infinite agent cycle can burn thousands of tokens and dozens of dollars per minute. Cost is an active operational metric, not a monthly cloud invoice footnote.
+4. **Streaming Perceived Latency:** Total generation time (e.g., 5.4 seconds for 800 tokens) is misleading. What defines user satisfaction is **Time-to-First-Token (TTFT)**.
+
+---
+
+### 2. Pillar 1: Hierarchical Agent DAG Run Trees (LangSmith)
+
+#### Flat Logs vs. Hierarchical Run Trees
+- **Flat logs (Old Way):** Interleaved lines in stdout (`[INFO] calling model...`, `[INFO] tool executed...`). Debugging a multi-turn conversation with concurrent users is an unreadable mess.
+- **Hierarchical Run Trees (New Way):** A Directed Acyclic Graph (DAG) with parent-child span relationships preserved in state:
+```
+Agent Run (Root Span - Total: 3.8s, $0.0014, 1,240 tokens)
+├── Step 1: classify_intent [LLM Span] (420ms, 210 tokens, $0.00018)
+│   ├── Input: Raw human prompt
+│   └── Output: ToolCall(name="classify_order_request", args={...})
+├── Step 2: evaluate_policy [Node Span] (1.2ms - Deterministic Python)
+├── Step 3: mcp_tool_execution [Tool Span] (180ms - I/O over JSON-RPC)
+│   ├── Input: {"order_id": "ORD-1001"}
+│   └── Output: {"status": "SHIPPED", "carrier": "FedEx"}
+└── Step 4: synthesizer [LLM Span] (1,450ms, 820 tokens, $0.0011)
+```
+
+#### Under-The-Hood Mechanics:
+- **LangChain / LangGraph Native Tracing:** LangGraph nodes and StateGraph executors natively accept `RunnableConfig` containing `callbacks` and `run_name` / `metadata`.
+- **LiteLLM Callbacks:** LiteLLM exposes global hooks (`litellm.success_callback = ["langsmith"]`, `litellm.failure_callback = ["langsmith"]`). When enabled via environment variables (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY=...`), every LiteLLM request automatically serializes prompts, completions, latency, and token consumption to LangSmith REST APIs asynchronously via a background queue.
+
+---
+
+### 3. Pillar 2: Streaming Latency & Time-to-First-Token (TTFT)
+
+#### Total Latency vs. Perceived Latency
+For interactive streaming chat (Server-Sent Events / SSE), total generation time is governed by token output length ($O(\text{completion\_tokens}) \times \sim 25\text{ms/token}$). Users do not mind waiting for a long paragraph to finish printing if generation begins immediately.
+- **TTFT (Time-to-First-Token):** Wall-clock duration between request dispatch and the receipt of the first non-empty text chunk.
+$$\text{TTFT} = t_{\text{first\_content\_chunk}} - t_{\text{request\_sent}}$$
+- **Inter-Token Latency (ITL):** Time delta between subsequent streamed chunks.
+
+#### Technical Measurement Mechanics:
+1. In the async generator (`AsyncLLMClient.acompletion_stream`), record `t_start = time.perf_counter()` before yielding to the upstream provider socket.
+2. Maintain a boolean flag `first_token_captured = False`.
+3. In the stream ingestion loop, inspect the incoming chunk deltas. On the first chunk where `chunk.choices[0].delta.content` is non-empty, capture:
+$$\text{TTFT}_{\text{ms}} = (t_{\text{now}} - t_{\text{start}}) \times 1000$$
+4. Emit this metric both to application logs, as metadata on the parent tracing span, and as a trailing Server-Sent Event (`event: metrics`) so frontend UI clients can track real user performance.
+
+#### Provider TTFT Benchmarks:
+- **Gemini 1.5/2.0 Flash:** ~150ms – 350ms (Low prefill latency)
+- **GPT-4o:** ~400ms – 750ms
+- **Claude 3.5 Sonnet:** ~700ms – 1,200ms
+*Gotcha:* Heavy system prompts or large few-shot examples inflate TTFT because the model must process the entire prompt context (the "prefill phase") before emitting token 1 (the "decode phase").
+
+---
+
+### 4. Pillar 3: Live Token Accounting & USD Cost Monitoring
+
+#### Why In-Memory & Gateway Metering is Essential
+Multi-turn agent loops suffer from quadratic token growth ($O(N^2)$). Turn 1 has 500 tokens; Turn 2 includes Turn 1's history + tool outputs (1,200 tokens); Turn 3 resends everything (2,400 tokens). Without active per-call token telemetry:
+- A run-away agent with loose exit conditions will exhaust API budget quotas.
+- Developers cannot identify prompt bloat or overly verbose tool descriptions.
+
+#### Measurement Architecture (Client-Side Interceptor Pattern):
+Instead of scattering token-counting logic across dozens of FastAPI routers or LangGraph nodes, instrument the **single bottleneck**: the `AsyncLLMClient`.
+1. **Response Interception:** Every completion response from `litellm.acompletion` returns a `usage` object:
+   - `prompt_tokens`: Count of input tokens processed during prefill.
+   - `completion_tokens`: Count of newly synthesized output tokens.
+   - `total_tokens`: $\text{prompt} + \text{completion}$.
+2. **Financial Conversion:** LiteLLM provides a dynamic model cost mapping:
+   $$\text{Cost} = (\text{prompt\_tokens} \times \text{Price}_{\text{input}}) + (\text{completion\_tokens} \times \text{Price}_{\text{output}})$$
+   via `litellm.completion_cost(completion_response=response)`.
+3. **Centralized Cost Tracker (`CostTracker` Singleton):**
+   - Thread-safe in-memory rolling buffer (e.g., deque with capacity 1,000).
+   - Aggregates metrics globally and sliced by model: total invocations, total tokens, total USD spend, average latency, and average TTFT.
+   - Exposes REST inspection endpoint: `GET /api/v1/observability/costs`.
+
+---
+
+### 5. Architectural Invariants & Interview Recall
+
+1. **"Why LangSmith over standard Prometheus / Datadog?"**
+   Prometheus and Datadog capture metrics and flat spans, but lack semantic understanding of LLM interactions. LangSmith natively records prompt templates, token inputs/outputs, model parameters, playground replayability, and hierarchical agent node cycles out of the box.
+2. **"Where should LLM instrumentation live?"**
+   Always at the lowest client boundary (`AsyncLLMClient`), never in high-level business services. This guarantees 100% telemetry coverage across all RAG, agent, and evaluation workflows without code duplication.
+3. **"What is the single most important latency metric for an LLM chatbot?"**
+   Time-to-First-Token (TTFT). High total request duration is acceptable for long completions; high TTFT makes the system feel unresponsive and broken.
+4. **"How do you protect against agent financial runaway?"**
+   Combine three layers: (1) max iteration guards on graph loops, (2) deterministic policy thresholds / Human-in-the-Loop interrupts for mutations, and (3) real-time Token/Cost monitoring with alert thresholds.

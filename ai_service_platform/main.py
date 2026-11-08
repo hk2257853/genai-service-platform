@@ -17,6 +17,8 @@ from ai_service_platform.api.rag import router as rag_router
 from ai_service_platform.api.llamaindex_rag import router as llamaindex_router
 from ai_service_platform.api.agent import router as agent_router
 from ai_service_platform.api.workflow import router as workflow_router
+from ai_service_platform.api.observability import router as observability_router
+from ai_service_platform.core.tracing import setup_tracing
 from ai_service_platform.core.exceptions import (
     LLMException,
     LLMAuthenticationError,
@@ -29,6 +31,9 @@ from ai_service_platform.core.exceptions import (
 # Production logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("main_app")
+
+# Initialize LangSmith AI Observability & Tracing hooks
+setup_tracing()
 
 app = FastAPI(
     title="AI Service Platform",
@@ -43,6 +48,7 @@ app.include_router(rag_router, prefix="/api/v1")
 app.include_router(llamaindex_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1")
 app.include_router(workflow_router, prefix="/api/v1")
+app.include_router(observability_router, prefix="/api/v1")
 
 
 # Global Exception Handlers mapping domain exceptions to HTTP status codes

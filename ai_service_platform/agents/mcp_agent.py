@@ -289,7 +289,11 @@ class MCPLangGraphAgent:
             await self.initialize()
 
         active_thread_id = thread_id or uuid.uuid4().hex
-        config_run = {"configurable": {"thread_id": active_thread_id}}
+        config_run = {
+            "configurable": {"thread_id": active_thread_id},
+            "run_name": f"MCPLangGraphAgent:{active_thread_id[:8]}",
+            "metadata": {"thread_id": active_thread_id, "agent_type": "mcp_react"}
+        }
 
         current_snapshot = await self.graph.aget_state(config_run)
         has_existing_messages = bool(

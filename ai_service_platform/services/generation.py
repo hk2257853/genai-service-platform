@@ -1,5 +1,6 @@
+import time
 import logging
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, Tuple
 
 from ai_service_platform import config
 from ai_service_platform.core.client import AsyncLLMClient
@@ -9,12 +10,13 @@ from ai_service_platform.schemas.generation import (
     LLMResponse,
     SentimentAnalysisResponse
 )
+from ai_service_platform.schemas.observability import StreamMetrics
 
 logger = logging.getLogger("generation_service")
 
 
 class LLMService:
-    """Service layer executing LLM text generation, structured analysis, and streaming."""
+    """Service layer executing LLM text generation, structured analysis, and streaming with telemetry."""
 
     def __init__(self, client: AsyncLLMClient | None = None):
         self.client = client or AsyncLLMClient(default_model=config.MODEL_ID)
@@ -59,24 +61,50 @@ class LLMService:
             **metrics
         )
 
-    async def stream_text(self, prompt: str) -> AsyncIterator[str]:
-        """Asynchronously streams generated text, capturing usage metadata in final chunk."""
+    async def stream_text_with_metrics(self, prompt: str) -> AsyncIterator[Tuple[str, Any]]:
+        """Asynchronously streams generated tokens and emits a final StreamMetrics event containing TTFT."""
+        t_start = time.perf_counter()
         stream_generator = self.client.acompletion_stream(
             action_name="service_stream",
             messages=[{"role": "user", "content": prompt}],
             stream_options={"include_usage": True}
         )
 
+        ttft_ms: float | None = None
+        chunk_count = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        cost_usd = 0.0
+
         async for chunk in stream_generator:
+            chunk_count += 1
+            if ttft_ms is None and hasattr(chunk, "_ttft_ms") and chunk._ttft_ms is not None:
+                ttft_ms = chunk._ttft_ms
+
             if hasattr(chunk, "usage") and chunk.usage is not None:
-                metrics = extract_usage_and_cost(chunk)
-                logger.info(
-                    "[Stream Finished] Prompt: %d, Completion: %d, Cost: $%.8f",
-                    metrics["prompt_tokens"],
-                    metrics["completion_tokens"],
-                    metrics["cost"]
-                )
+                usage_metrics = extract_usage_and_cost(chunk)
+                prompt_tokens = usage_metrics["prompt_tokens"]
+                completion_tokens = usage_metrics["completion_tokens"]
+                cost_usd = usage_metrics["cost"]
             elif len(chunk.choices) > 0:
                 content = chunk.choices[0].delta.content
                 if content:
-                    yield content
+                    yield ("content", content)
+
+        total_ms = (time.perf_counter() - t_start) * 1000
+        metrics = StreamMetrics(
+            ttft_ms=round(ttft_ms, 2) if ttft_ms is not None else None,
+            total_duration_ms=round(total_ms, 2),
+            total_chunks=chunk_count,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            cost_usd=round(cost_usd, 8)
+        )
+        yield ("metrics", metrics)
+
+    async def stream_text(self, prompt: str) -> AsyncIterator[str]:
+        """Asynchronously streams text content tokens (backwards-compatible plain string generator)."""
+        async for event_type, payload in self.stream_text_with_metrics(prompt):
+            if event_type == "content":
+                yield payload

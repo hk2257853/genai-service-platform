@@ -47,11 +47,14 @@ async def stream_chat(
     request: ChatRequest, 
     service: LLMService = Depends(get_llm_service)
 ):
-    """Streams token-by-token response content using Server-Sent Events (SSE)."""
+    """Streams token-by-token response content with trailing TTFT and operational metrics using SSE."""
     async def sse_generator():
         try:
-            async for token in service.stream_text(request.prompt):
-                yield f"data: {token}\n\n"
+            async for event_type, payload in service.stream_text_with_metrics(request.prompt):
+                if event_type == "content":
+                    yield f"data: {payload}\n\n"
+                elif event_type == "metrics":
+                    yield f"event: metrics\ndata: {payload.model_dump_json()}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {str(e)}\n\n"
 

@@ -506,7 +506,11 @@ class MultiStepWorkflowAgent:
     ) -> tuple[WorkflowState, bool, Optional[Dict[str, Any]]]:
         """Initiates a workflow run. Returns (state, is_interrupted, interrupt_payload)."""
         tid = thread_id or f"wf-{uuid.uuid4().hex[:10]}"
-        config_run = {"configurable": {"thread_id": tid}}
+        config_run = {
+            "configurable": {"thread_id": tid},
+            "run_name": f"WorkflowGraph:{tid[:8]}",
+            "metadata": {"thread_id": tid, "customer_id": customer_id, "workflow": "ecommerce_governance"}
+        }
         
         initial_state: WorkflowState = {
             "messages": [HumanMessage(content=prompt)],
@@ -556,7 +560,11 @@ class MultiStepWorkflowAgent:
         feedback: Optional[str] = None
     ) -> tuple[WorkflowState, bool]:
         """Resumes a paused workflow run by sending a Command(resume=decision) to the checkpointer."""
-        config_run = {"configurable": {"thread_id": thread_id}}
+        config_run = {
+            "configurable": {"thread_id": thread_id},
+            "run_name": f"WorkflowGraphResume:{thread_id[:8]}",
+            "metadata": {"thread_id": thread_id, "action": "resume", "reviewer": reviewer}
+        }
         
         state_snap = await self.graph.aget_state(config_run)
         if not state_snap.values:

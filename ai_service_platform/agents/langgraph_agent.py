@@ -390,7 +390,11 @@ class LangGraphAgent:
     ) -> Dict[str, Any]:
         """Executes the agent state machine with persistent thread checkpointing."""
         active_thread_id = thread_id or uuid.uuid4().hex
-        config_run = {"configurable": {"thread_id": active_thread_id}}
+        config_run = {
+            "configurable": {"thread_id": active_thread_id},
+            "run_name": f"LangGraphAgent:{active_thread_id[:8]}",
+            "metadata": {"thread_id": active_thread_id, "agent_type": "react"}
+        }
 
         # Inspect current state for this thread in checkpointer
         current_snapshot = await self.graph.aget_state(config_run)
