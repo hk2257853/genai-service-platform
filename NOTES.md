@@ -859,3 +859,152 @@ Instead of scattering token-counting logic across dozens of FastAPI routers or L
    Time-to-First-Token (TTFT). High total request duration is acceptable for long completions; high TTFT makes the system feel unresponsive and broken.
 4. **"How do you protect against agent financial runaway?"**
    Combine three layers: (1) max iteration guards on graph loops, (2) deterministic policy thresholds / Human-in-the-Loop interrupts for mutations, and (3) real-time Token/Cost monitoring with alert thresholds.
+
+---
+
+## Day 17 — Production AI Patterns: Semantic Caching, Fallback Routing, and Token Rate Limiting
+
+### 1. The Fundamental Shift: Traditional HTTP Gateway vs. AI Gateway Patterns
+
+In standard enterprise microservices (e.g. Java/Spring Boot or FastAPI), API gateways rely on standard reverse-proxy patterns: exact-match Redis caching and IP-based Requests-Per-Minute (RPM) rate limiting. You log and rate limit:
+```
+POST /api/v1/orders - 200 OK - duration: 42ms - client_ip: 10.0.0.1 - rate_limit: 60/min
+```
+This paradigm fails completely for generative AI and autonomous agent gateways for three core architectural reasons:
+
+1. **Exact-Match Caching Yields ~0% Hit Rates:** Natural language is non-deterministic and lexically fluid. Two users asking *"How do I get my money back?"* and *"What is your return policy?"* express identical semantic intent but share zero string equality. Exact string hashing (`SHA256(prompt)`) treats them as distinct cache misses, repeatedly incurring 500–2,000ms LLM latency and API charges.
+2. **RPM Rate Limiting Ignores Token Heterogeneity:** Traditional gateways count request frequency ($N$ requests/minute). In an LLM gateway, Request A may contain 150 prompt tokens with 50 completion tokens, while Request B presents a 120,000-token PDF prompt with 4,000 completion tokens. An IP-based RPM limiter treats both as 1 request, allowing single large requests to exhaust upstream vendor quotas (such as Gemini or OpenAI Token-Per-Minute ceilings) and trip global HTTP 429 outages.
+3. **Vendor Outages Paralyze Single-Model Gateways:** Commercial LLM APIs experience regional capacity exhaustion, queue prefill timeouts, and 5xx internal server errors. Relying on a single vendor creates a single point of failure (SPOF). Without cross-provider fallback cascades and circuit breakers, every request stalls waiting for upstream timeouts (15–30s) before failing.
+
+---
+
+### 2. Pillar 1: Semantic Caching via Vector Cosine Similarity
+
+#### Exact Matching vs. Semantic Vector Caching
+- **Exact-Match Cache (Old Way):** Matches byte-for-byte strings. Paraphrased or synonym-substituted queries miss the cache every time.
+- **Semantic Vector Cache (New Way):** Maps queries into a continuous vector space $\vec{u} \in \mathbb{R}^d$ and gates cache hits based on cosine similarity against indexed query vectors:
+
+```
+Incoming Query: "How do I return something I bought?"
+├── Step 1: dense_embed() -> u in R^d (L2-Normalized: ||u||_2 = 1.0)
+├── Step 2: dot_product(u, V_namespace) -> [0.950, 0.410, 0.150, ...]
+└── Step 3: similarity_gate(max_sim = 0.950, tau = 0.92)
+    ├── sim >= 0.92 -> CACHE HIT!
+    │   └── Return cached completion: "Items can be returned within 30 days..."
+    │       (Latency: <1ms, LLM Cost: $0.00, Tokens Saved: 48)
+    └── sim <  0.92 -> CACHE MISS!
+        └── Dispatch to Cross-Provider Fallback Router
+```
+
+#### Under-The-Hood Mechanics:
+1. **L2 Normalization & Dot Product Equivalence:**
+   Cosine similarity measures the angle between two dense vectors:
+   $$\text{sim}(\vec{u}, \vec{v}) = \frac{\vec{u} \cdot \vec{v}}{\|\vec{u}\|_2 \|\vec{v}\|_2}$$
+   By L2-normalizing all stored vectors upon insertion:
+   $$\vec{v}_{\text{norm}} = \frac{\vec{v}}{\sqrt{\sum_{k=1}^d v_k^2}}$$
+   the denominator evaluates to $1.0$, reducing similarity calculation to a single vectorized matrix-vector dot product:
+   $$\text{sim}(\vec{u}, \vec{v}) = \sum_{k=1}^d u_k v_k$$
+   In NumPy, this dot product executes across thousands of cached queries in $< 0.5\text{ms}$.
+
+2. **Threshold Calibration ($\tau$):**
+   - **Mechanism:** A query is deemed a cache hit if $\max_i(\text{sim}(\vec{u}, \vec{v}_i)) \ge \tau$.
+   - **Tradeoff:** Empirical testing demonstrates that $\tau = 0.92$ is the optimal operating threshold. Thresholds below $0.88$ introduce semantic drift (answering subtly different queries with outdated context), whereas thresholds above $0.96$ degenerate into near-exact lexical matching, forfeiting paraphrased cache hits.
+
+3. **Task & System Prompt Namespace Isolation:**
+   - **Mechanism:** Scoping cache partitions by `namespace = SHA256(system_prompt)[:16]` ensures that a customer support query (`"Help me with order 123"`) never returns a completion generated under an internal SQL generation or Python coding system prompt.
+   - **Deterministic Gating:** Cache writes and lookups are strictly restricted to low-temperature deterministic requests ($T \le 0.3$). Creative, high-temperature generations ($T > 0.7$) bypass the cache entirely to preserve generative diversity.
+
+4. **Cache Eviction & Expiry (LRU + TTL):**
+   - **Mechanism:** Memory footprint is bounded via an `OrderedDict`-backed Least Recently Used (LRU) policy. When cache capacity exceeds `SEMANTIC_CACHE_MAX_ENTRIES`, the oldest accessed entry is evicted. Stale entries are lazily purged based on `SEMANTIC_CACHE_TTL_SECONDS`.
+
+---
+
+### 3. Pillar 2: Cross-Provider Fallback Model Routing (LiteLLM Router)
+
+#### Multi-Vendor Cascade Topology
+Rather than maintaining separate client instances for each cloud provider, the gateway organizes models into a hierarchical fallback cascade:
+
+```
+Incoming Model Invocation
+├── Tier 1 (Primary): gemini/gemini-2.5-flash
+│   ├── Cost: $0.075 / 1M input, $0.30 / 1M output | Role: Low-cost workhorse
+│   └── Success? -> Return response (320ms, $0.00012)
+│   └── 429 / 503 / Timeout? -> Trip Gemini breaker to OPEN -> Fallback to Tier 2
+├── Tier 2 (Fallback 1): openai/gpt-4o-mini
+│   ├── Cost: $0.150 / 1M input, $0.60 / 1M output | Role: High-availability redundancy
+│   └── Success? -> Return response (480ms, $0.00024)
+│   └── Failure? -> Trip GPT-4o-mini breaker to OPEN -> Fallback to Tier 3
+└── Tier 3 (Fallback 2): anthropic/claude-3-5-haiku
+    ├── Cost: $0.800 / 1M input, $4.00 / 1M output | Role: Deep semantic alignment
+    └── Failure? -> Raise AllProvidersUnavailableError (HTTP 503)
+```
+
+#### Under-The-Hood Mechanics:
+1. **Tool-Calling & Schema Normalization:**
+   Different LLM providers implement distinct function declaration formats (Gemini `function_declarations` vs. OpenAI `tools` vs. Anthropic `tools`). The gateway leverages LiteLLM's standardized protocol adapter, accepting unified OpenAI-compatible tool specifications and Pydantic schemas. When failover occurs, LiteLLM re-serializes function arguments and system prompts into the target provider's native JSON-RPC schema on the fly.
+
+2. **Fast-Fail Circuit Cooldown Mechanics:**
+   - **Mechanism:** LiteLLM Router tracks consecutive failure counts per model deployment (`allowed_fails=3`). When a provider encounters sustained errors (HTTP 429 quota exhaustion or 5xx server errors), the router places the deployment into a cooldown state (`cooldown_time=30s`).
+   - **Fast-Fail Bypass:** Before executing a network request, the gateway inspects deployment circuit states. If the primary provider's circuit is in cooldown (`OPEN`), the router immediately bypasses the primary model and routes directly to the secondary provider without waiting for network timeouts.
+   - *Gotcha:* If all configured primary and fallback providers fail or enter cooldown simultaneously, the gateway intercepts the terminal condition and raises `AllProvidersUnavailableError`, mapping to HTTP 503 instead of hanging indefinitely.
+
+---
+
+### 4. Pillar 3: Token-Per-Minute (TPM) Sliding-Window Rate Limiting
+
+#### Why Token Rate Limiting is Mandatory
+Traditional gateways count request frequency ($N$ RPM). Because an agent query can span anywhere from 50 tokens to 128,000 tokens, request counting allows a single heavy prompt to exhaust the organization's tier quota. The gateway must meter **Tokens-Per-Minute (TPM)** using a continuous sliding window.
+
+#### Two-Phase Reservation and Settlement Protocol:
+Because completion tokens cannot be known prior to generation, static rate limiting is impossible. The gateway implements a two-phase sliding-window ledger:
+
+```
+Step 1: Pre-Dispatch (Phase 1 — Reservation)
+┌────────────────────────────────────────────────────────┐
+│ Estimate prompt tokens (~chars // 4) + expected output │
+│ Calculate: Current 60s Window Usage + Reservation      │
+└──────────────────────────┬─────────────────────────────┘
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+      Usage <= Limit               Usage > Limit
+   [Acquire Reservation]       [Raise LLMTPMRateLimitError]
+   Execute Model Call          Calculate exact Retry-After
+             │                 Emit HTTP 429 with Header
+             ▼
+Step 2: Post-Completion (Phase 2 — Settlement)
+┌────────────────────────────────────────────────────────┐
+│ Parse actual prompt_tokens + completion_tokens         │
+│ Reconcile ledger: Replace Reservation with Actual      │
+│ (Or Release reservation immediately on Cache Hit)      │
+└────────────────────────────────────────────────────────┘
+```
+
+#### Technical Measurement Mechanics:
+1. **Sliding Window Log Accounting:**
+   Rather than fixed 60-second time buckets (which suffer from the "double-burst" problem at boundary edges), the limiter maintains a timestamped reservation ledger:
+   $$\text{Window Usage}(t) = \sum_{e \in \text{Ledger}, t - t_e \le 60.0\text{s}} \text{tokens}(e)$$
+   During each check, entries with `timestamp <= now - 60.0s` are pruned.
+
+2. **Precise `Retry-After` Calculation:**
+   When projected consumption exceeds `TPM_LIMIT`, the limiter computes the exact delta until the oldest ledger entries expire to free sufficient capacity:
+   $$\text{Retry-After} = \max\left(1.0, (t_{\text{oldest\_overflow}} + 60.0) - t_{\text{now}}\right)$$
+   This float is emitted as the standard HTTP `Retry-After` header.
+
+3. **Cache Hit Token Refund:**
+   When a request hits the semantic cache, the pre-dispatch reservation is immediately refunded (`limiter.release(reservation_id)`), ensuring clients are never penalized against their token quota for cached responses.
+
+---
+
+### 5. Architectural Invariants & Interview Recall
+
+1. **"Why in-memory vector caching over distributed Redis Vector / pgvector?"**
+   In-memory NumPy vector storage provides sub-millisecond lookups ($<0.5\text{ms}$) with zero network I/O or serialization overhead, ideal for single-pod deployments and high-frequency queries. For horizontally scaled multi-pod architectures, in-memory caches do not share hits across nodes. In distributed production clusters, the vector index is offloaded to `pgvector` (via HNSW index) or Redis Stack with vector search (RediSearch) so all gateway instances benefit from a shared warm cache.
+2. **"Why use LiteLLM Router's built-in cooldowns instead of a custom circuit breaker?"**
+   Building a bespoke circuit breaker duplicates LiteLLM Router's native deployment monitoring (`allowed_fails`, `cooldown_time`, `get_available_deployment`). Leveraging the established library conforms to the *Framework-First, Always* invariant, eliminating custom failure-tracking bugs while preserving standard tool-calling and schema translation across providers.
+3. **"Why is two-phase reservation strictly necessary for LLM rate limiting?"**
+   A single large prompt can consume 50,000 tokens. If tokens were accounted for purely post-completion, multiple concurrent requests would dispatch simultaneously, breach the provider's upstream TPM limit, and fail concurrently with cascading 429 errors. Reserving tokens upfront guarantees that gateway-concurrency never over-subscribes upstream quotas.
+4. **"How do you prevent semantic cache cross-contamination between different system prompts or users?"**
+   Cache namespaces must be hashed from the system prompt signature: `namespace = SHA256(system_prompt + tool_signatures)[:16]`. A query asking *"Cancel my subscription"* under a customer retention agent must never collide with the same query under an account deletion agent.
+
+
