@@ -18,15 +18,19 @@ from ai_service_platform.api.llamaindex_rag import router as llamaindex_router
 from ai_service_platform.api.agent import router as agent_router
 from ai_service_platform.api.workflow import router as workflow_router
 from ai_service_platform.api.observability import router as observability_router
+from ai_service_platform.api.gateway import router as gateway_router
 from ai_service_platform.core.tracing import setup_tracing
 from ai_service_platform.core.exceptions import (
     LLMException,
     LLMAuthenticationError,
     LLMRateLimitError,
+    LLMTPMRateLimitError,
     LLMConnectionError,
     LLMTimeoutError,
-    LLMAPIError
+    LLMAPIError,
+    AllProvidersUnavailableError,
 )
+
 
 # Production logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -49,9 +53,36 @@ app.include_router(llamaindex_router, prefix="/api/v1")
 app.include_router(agent_router, prefix="/api/v1")
 app.include_router(workflow_router, prefix="/api/v1")
 app.include_router(observability_router, prefix="/api/v1")
+app.include_router(gateway_router, prefix="/api/v1")
 
 
 # Global Exception Handlers mapping domain exceptions to HTTP status codes
+@app.exception_handler(LLMTPMRateLimitError)
+async def tpm_rate_limit_exception_handler(request: Request, exc: LLMTPMRateLimitError):
+    logger.warning("TPM rate limit error raised globally: %s", exc)
+    return JSONResponse(
+        status_code=429,
+        headers={"Retry-After": str(int(exc.retry_after_seconds))},
+        content={
+            "detail": "Token-Per-Minute limit exceeded. Please retry later.",
+            "error": str(exc),
+            "retry_after_seconds": exc.retry_after_seconds,
+        }
+    )
+
+
+@app.exception_handler(AllProvidersUnavailableError)
+async def all_providers_unavailable_handler(request: Request, exc: AllProvidersUnavailableError):
+    logger.error("All providers unavailable raised globally: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "All configured LLM providers in fallback router are unavailable or in cooldown.",
+            "error": str(exc),
+            "tried_models": exc.tried_models,
+        }
+    )
+
 @app.exception_handler(LLMAuthenticationError)
 async def auth_exception_handler(request: Request, exc: LLMAuthenticationError):
     logger.critical("Authentication error raised globally: %s", exc)

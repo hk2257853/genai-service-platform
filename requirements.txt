@@ -19,4 +19,5 @@ pytest
 pytest-asyncio
 pytest-html
 langsmith
+numpy
 

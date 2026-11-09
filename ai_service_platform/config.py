@@ -24,3 +24,21 @@ LANGCHAIN_TRACING_V2: bool = os.getenv("LANGCHAIN_TRACING_V2", "false").strip().
 LANGCHAIN_API_KEY: str | None = os.getenv("LANGCHAIN_API_KEY")
 LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "ai-service-platform")
 LANGCHAIN_ENDPOINT: str = os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+
+# Production AI Patterns Configuration (Day 17)
+# 1. Semantic Caching
+SEMANTIC_CACHE_ENABLED: bool = os.getenv("SEMANTIC_CACHE_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+SEMANTIC_CACHE_THRESHOLD: float = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.92"))
+SEMANTIC_CACHE_TTL_SECONDS: int = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "3600"))
+SEMANTIC_CACHE_MAX_ENTRIES: int = int(os.getenv("SEMANTIC_CACHE_MAX_ENTRIES", "1000"))
+
+# 2. Token-Per-Minute (TPM) Budgeting
+TPM_LIMIT: int = int(os.getenv("TPM_LIMIT", "100000"))
+
+# 3. Fallback Model Routing & LiteLLM Cooldown / Circuit Breakers
+FALLBACK_MODELS: list[str] = [
+    m.strip() for m in os.getenv("FALLBACK_MODELS", "openai/gpt-4o-mini,anthropic/claude-3-5-haiku").split(",") if m.strip()
+]
+ROUTER_ALLOWED_FAILS: int = int(os.getenv("ROUTER_ALLOWED_FAILS", "3"))
+ROUTER_COOLDOWN_TIME: int = int(os.getenv("ROUTER_COOLDOWN_TIME", "30"))
+
