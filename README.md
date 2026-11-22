@@ -1,6 +1,10 @@
 # GenAI Service Platform
 
-A production-grade Python AI microservice platform built with **FastAPI**, **LiteLLM**, **LlamaIndex**, and **LangGraph**. Demonstrates a 5-layer clean architecture with unified schema inheritance, hybrid RAG retrieval, metadata filtering, and cyclic autonomous state machine agents.
+> A production-grade Python AI microservice platform built with **FastAPI**, **LiteLLM**, **LlamaIndex**, and **LangGraph**. Demonstrates a 5-layer clean architecture with unified schema inheritance, hybrid RAG retrieval, metadata filtering, cyclic state machine agents, and human-in-the-loop governance.
+>
+> 🌐 **Polyglot Ecosystem Repositories**:
+> - 🤖 **Standalone AI Platform**: [`genai-service-platform`](https://github.com/hk2257853/genai-service-platform) *(this repository)*
+> - ☕ **Commerce Core & Control Center UI**: [`ecommerce-microservices-backend`](https://github.com/hk2257853/ecommerce-microservices-backend) *(Spring Boot 3 + Redis + Kafka + React Control Center)*
 
 ---
 
@@ -102,6 +106,19 @@ py -m uvicorn ai_service_platform.main:app --reload
 | **Workflows** | `POST` | `/api/v1/workflow/resume` | Resume interrupted thread with supervisor approval decision |
 | **Workflows** | `GET` | `/api/v1/workflow/state/{id}` | Inspect StateSnapshot of active or interrupted thread |
 | **Workflows** | `GET` | `/api/v1/workflow/topology` | Export static compiled graph nodes & edges as native Mermaid syntax |
+| **Gateway** | `GET` | `/api/v1/gateway/cache/stats` | Real-time semantic vector cache hit-rate and savings |
+| **Gateway** | `GET` | `/api/v1/gateway/tpm/status` | 60-second sliding window Token-Per-Minute capacity status |
+| **Gateway** | `GET` | `/api/v1/gateway/circuits` | Multi-model fallback router circuit breaker matrix |
+| **Observability**| `GET`| `/api/v1/observability/costs` | Real-time platform-wide token & USD cost telemetry |
+
+---
+
+## 🧭 Architectural Roadmap & Trade-offs
+
+- **Decoupled Agent Domain Fixtures**:
+  The LangGraph agent tools currently query in-memory e-commerce entities (`mock_ecommerce.py`) so the AI platform can be tested, developed, and deployed independently of external databases.
+- **Next Milestone**:
+  Connect the agent tool calls directly to the live Java Spring Boot Orders Service (`http://localhost:8080/api/orders/{id}`) with graceful fallback to local domain fixtures if the Java backend is unreachable.
 
 ---
 
