@@ -8,6 +8,14 @@
 
 ---
 
+## 🎬 NexusOps Studio Showcase Walkthrough
+
+[![NexusOps Studio Walkthrough](nexusops_showcase_thumbnail.png)](nexusops_showcase_walkthrough_light.mp4)
+
+> 🎥 **[Watch the full 2-minute walkthrough (`nexusops_showcase_walkthrough_light.mp4`)](nexusops_showcase_walkthrough_light.mp4)** — *Demonstrates the unified Mission Control UI interacting with the FastAPI GenAI platform (token streaming, 4-stage hybrid RAG, LangGraph ReAct agent tool reasoning, and human-in-the-loop refund approvals).*
+
+---
+
 ## Architecture Overview
 
 ```text
